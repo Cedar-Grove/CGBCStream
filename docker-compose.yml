@@ -10,7 +10,9 @@ services:
       - ./mediamtx/mediamtx.yml:/mediamtx.yml:ro
 
   app:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: cgbcstream-app
     restart: always
     depends_on:
@@ -19,3 +21,5 @@ services:
       - "3000:3000"
     env_file:
       - .env
+    volumes:
+      - ./data:/app/data # persists destinations/schedules across restarts

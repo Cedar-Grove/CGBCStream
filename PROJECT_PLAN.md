@@ -63,8 +63,11 @@ Blackmagic Web Presenter
   at the scheduled end (or on manual stop).
 - `StatusMonitor` — polls MediaMTX for input presence/resolution/bitrate
   and ffmpeg process health, pushes updates over WebSocket.
-- SQLite (Prisma) for destinations, schedules, and stream session
-  history/logs.
+- SQLite (`better-sqlite3`, plain SQL — no ORM needed at this schema size)
+  for destinations, schedules, and stream session history/logs. Stream
+  keys are encrypted at rest (AES-256-GCM, key derived from an
+  `ENCRYPTION_KEY` env passphrase) and the API never returns the
+  plaintext key back to the frontend, only a masked preview.
 - Session-based auth (small number of admin accounts — this controls
   live broadcast infrastructure, not public-facing).
 
@@ -98,9 +101,9 @@ Web Presenter's VLAN so its configured RTMP target doesn't break.
 
 ## Build phases
 
-1. **Pipeline spike** — MediaMTX + one hardcoded ffmpeg push, prove
+1. ✅ **Pipeline spike** — MediaMTX + one hardcoded ffmpeg push, prove
    Web Presenter → relay → single destination works end-to-end.
-2. **Destinations** — CRUD, generic multi-destination `RelayController`,
+2. ✅ **Destinations** — CRUD, generic multi-destination `RelayManager`,
    Destinations UI.
 3. **Status & preview** — input detection, per-destination health,
    dashboard preview.
