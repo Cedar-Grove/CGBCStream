@@ -5,8 +5,12 @@ export const PLATFORMS: readonly Platform[] = ["youtube", "subsplash", "facebook
 export interface DestinationInput {
   name: string;
   platform: Platform;
-  serverUrl: string;
+  // Static platforms (subsplash/facebook): fixed RTMP server + key.
+  serverUrl?: string;
   streamKey?: string;
+  // youtube: links to a connected account instead — YouTube issues a
+  // fresh RTMP key per broadcast, created at enable time.
+  youtubeAccountId?: string;
 }
 
 // Never sends the plaintext stream key back over the API — just enough
@@ -18,6 +22,7 @@ export interface DestinationPublic {
   serverUrl: string;
   hasStreamKey: boolean;
   streamKeyPreview: string;
+  youtubeAccountId: string | null;
   enabled: boolean;
   createdAt: string;
 }

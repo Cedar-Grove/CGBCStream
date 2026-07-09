@@ -105,10 +105,11 @@ Web Presenter's VLAN so its configured RTMP target doesn't break.
    Web Presenter → relay → single destination works end-to-end.
 2. ✅ **Destinations** — CRUD, generic multi-destination `RelayManager`,
    Destinations UI.
-3. **Status & preview** — input detection, per-destination health,
+3. ✅ **Status & preview** — input detection, per-destination health,
    dashboard preview.
-4. **YouTube integration** — OAuth flow, broadcast creation/lifecycle via
-   API, bind to relay, manual "go live."
+4. ✅ **YouTube integration** — OAuth flow, broadcast creation via API
+   (enableAutoStart/enableAutoStop instead of manual transitions), bind
+   to relay.
 5. **Scheduler** — recurring schedules, auto-create YouTube broadcast
    ahead of start, auto start/stop destinations, Schedule UI.
 6. **Hardening** — crash recovery/reconciliation on restart, auth,

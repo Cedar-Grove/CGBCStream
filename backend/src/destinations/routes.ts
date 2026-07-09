@@ -1,14 +1,17 @@
 import type { FastifyInstance } from "fastify";
+import type { RelayManager } from "../relay/relayManager.js";
+import { getRefreshToken } from "../youtube/accountsRepository.js";
+import { createAndStartBroadcast } from "../youtube/youtubeService.js";
 import {
   createDestination,
   deleteDestination,
+  getDestinationMeta,
   getFullRtmpUrl,
   listDestinations,
   setEnabled,
   updateDestination,
 } from "./repository.js";
 import { PLATFORMS, type DestinationInput } from "./types.js";
-import type { RelayManager } from "../relay/relayManager.js";
 
 function isValidPlatform(value: unknown): value is DestinationInput["platform"] {
   return typeof value === "string" && (PLATFORMS as readonly string[]).includes(value);
@@ -19,11 +22,16 @@ export function registerDestinationRoutes(app: FastifyInstance, relayManager: Re
 
   app.post("/api/destinations", async (req, reply) => {
     const body = req.body as Partial<DestinationInput> | undefined;
+    if (!isValidPlatform(body?.platform)) {
+      return reply.code(400).send({ error: `platform must be one of ${PLATFORMS.join(", ")}` });
+    }
+    if (body?.platform === "youtube") {
+      return reply
+        .code(400)
+        .send({ error: "Connect a YouTube channel via /api/youtube/auth instead of adding it manually" });
+    }
     if (!body?.name || !body?.serverUrl || !body?.streamKey) {
       return reply.code(400).send({ error: "name, platform, serverUrl, streamKey are required" });
-    }
-    if (!isValidPlatform(body.platform)) {
-      return reply.code(400).send({ error: `platform must be one of ${PLATFORMS.join(", ")}` });
     }
     const created = createDestination(body as DestinationInput);
     return reply.code(201).send(created);
@@ -50,6 +58,28 @@ export function registerDestinationRoutes(app: FastifyInstance, relayManager: Re
 
   app.post("/api/destinations/:id/enable", async (req, reply) => {
     const { id } = req.params as { id: string };
+    const meta = getDestinationMeta(id);
+    if (!meta) return reply.code(404).send({ error: "not found" });
+
+    if (meta.platform === "youtube") {
+      if (!meta.youtubeAccountId) {
+        return reply.code(400).send({ error: "no YouTube account linked to this destination" });
+      }
+      const refreshToken = getRefreshToken(meta.youtubeAccountId);
+      if (!refreshToken) {
+        return reply.code(400).send({ error: "linked YouTube account no longer exists" });
+      }
+      try {
+        const { rtmpUrl, broadcastId } = await createAndStartBroadcast(refreshToken, meta.name, new Date());
+        setEnabled(id, true);
+        relayManager.start(id, rtmpUrl);
+        return { ok: true, broadcastId };
+      } catch (err) {
+        app.log.error(err);
+        return reply.code(502).send({ error: (err as Error).message });
+      }
+    }
+
     const rtmpUrl = getFullRtmpUrl(id);
     if (!rtmpUrl) return reply.code(404).send({ error: "not found" });
     setEnabled(id, true);

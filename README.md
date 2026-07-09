@@ -5,17 +5,16 @@ live to YouTube, Subsplash, and (future) Facebook. See
 [PROJECT_PLAN.md](./PROJECT_PLAN.md) for the full architecture and
 build-phase breakdown.
 
-Phases 1–2 are done: the ingest→relay pipeline, plus configurable
-destinations (add/edit/enable/disable YouTube, Subsplash, or a future
-Facebook adapter) with a web UI. Scheduler, YouTube broadcast
-auto-creation, and the live input preview are not built yet.
+Phases 1–4 are done: the ingest→relay pipeline, configurable
+destinations with a web UI, a live input preview, and YouTube OAuth +
+broadcast creation. The scheduler and auth/hardening are not built yet.
 
 ## Running it
 
 ```sh
 cp .env.example .env
 # edit .env: set ENCRYPTION_KEY to a long random passphrase (used to
-# encrypt destination stream keys at rest)
+# encrypt destination stream keys and YouTube refresh tokens at rest)
 
 docker compose up --build
 ```
@@ -26,10 +25,40 @@ docker compose up --build
 Point the Blackmagic Web Presenter's RTMP output at
 `rtmp://<this-machine-ip>:1935/live`.
 
-Open `http://<this-machine-ip>:3000` → **Destinations** → add a
-destination (name, platform, server URL, stream key), then click
-**Enable** to start relaying to it. The **Dashboard** shows live
-status per destination.
+Open `http://<this-machine-ip>:3000` → **Destinations**:
+- **Subsplash / Facebook**: "+ Add destination" → name, server URL,
+  stream key.
+- **YouTube**: "Connect YouTube channel" (see setup below) — no manual
+  RTMP details needed, a fresh key is created per broadcast.
+
+Click **Enable** to go live to a destination. The **Dashboard** shows
+the incoming feed and live status per destination.
+
+### YouTube setup
+
+YouTube broadcast creation needs an OAuth client from a Google Cloud
+project:
+
+1. Google Cloud Console → enable the **YouTube Data API v3**.
+2. APIs & Services → Credentials → Create OAuth client ID → Web
+   application.
+3. Add an authorized redirect URI:
+   `http://<this-machine-ip>:3000/api/youtube/oauth/callback`
+4. In `.env`, set `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET`, and
+   `YOUTUBE_REDIRECT_URI` (matching the URI above exactly).
+5. Restart (`docker compose up -d --build`), then click **Connect
+   YouTube channel** in the UI and sign in with the channel's Google
+   account.
+
+Broadcasts are created with `enableAutoStart`/`enableAutoStop`, so
+YouTube itself flips the broadcast live once it sees the relay's RTMP
+data, and ends it once the feed stops — no manual "go live" step on
+YouTube's side. They default to `public` visibility.
+
+Note: a backend restart clears any YouTube destination's "enabled"
+state, since its RTMP key was tied to a broadcast that no longer
+exists — you'll need to click Enable again after a restart. Static
+destinations (Subsplash/Facebook) restart automatically.
 
 ## Testing without the Web Presenter
 
@@ -43,9 +72,9 @@ ffmpeg -re -f lavfi -i "testsrc=size=1280x720:rate=30" \
   -f flv rtmp://localhost:1935/live
 ```
 
-Then add a destination in the UI (or via API) and click Enable — you
+Then add/connect a destination in the UI and click Enable — you
 should see the test pattern appear at the destination within a few
-seconds.
+seconds, and in the Dashboard's preview player.
 
 ## Backend dev (without Docker)
 

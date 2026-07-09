@@ -17,5 +17,24 @@ db.exec(`
     stream_key TEXT NOT NULL,
     enabled INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
-  )
+  );
+
+  CREATE TABLE IF NOT EXISTS youtube_accounts (
+    id TEXT PRIMARY KEY,
+    channel_title TEXT NOT NULL,
+    refresh_token TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
 `);
+
+/** Adds a column to an existing table if it isn't there yet — SQLite has no "ADD COLUMN IF NOT EXISTS". */
+function ensureColumn(table: string, column: string, ddl: string): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!columns.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+  }
+}
+
+// YouTube destinations link to a connected account instead of a static
+// server URL/key (YouTube issues a fresh RTMP key per broadcast).
+ensureColumn("destinations", "youtube_account_id", "youtube_account_id TEXT");

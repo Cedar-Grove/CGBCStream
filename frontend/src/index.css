@@ -51,6 +51,26 @@ main {
   margin-bottom: 1rem;
 }
 
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.75rem;
+  background: #ef4444;
+  color: white;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.success {
+  color: #15803d;
+}
+
 table.destinations-table {
   width: 100%;
   border-collapse: collapse;

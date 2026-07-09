@@ -7,6 +7,7 @@ import { registerDestinationRoutes } from "./destinations/routes.js";
 import { registerInputRoutes } from "./input/routes.js";
 import { RelayManager } from "./relay/relayManager.js";
 import { registerRelayRoutes } from "./relay/routes.js";
+import { registerYoutubeRoutes } from "./youtube/routes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -22,6 +23,7 @@ app.get("/api/health", async () => ({ ok: true }));
 registerDestinationRoutes(app, relayManager);
 registerRelayRoutes(app, relayManager);
 registerInputRoutes(app);
+registerYoutubeRoutes(app);
 
 // The built frontend (backend/public, produced by the frontend build in
 // Docker) is served from here; absent in plain backend-only dev mode.

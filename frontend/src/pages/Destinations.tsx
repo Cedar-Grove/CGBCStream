@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   api,
   type Destination,
@@ -8,15 +9,17 @@ import {
 } from "../api";
 import StatusBadge from "../components/StatusBadge";
 
-const PLATFORMS: { value: Platform; label: string }[] = [
-  { value: "youtube", label: "YouTube" },
+// YouTube isn't offered here — it's connected via OAuth ("Connect YouTube
+// channel" below), since it needs a linked account rather than a static
+// server URL/key.
+const STATIC_PLATFORMS: { value: Platform; label: string }[] = [
   { value: "subsplash", label: "Subsplash" },
   { value: "facebook", label: "Facebook (coming soon)" },
 ];
 
 const emptyDraft: DestinationDraft = {
   name: "",
-  platform: "youtube",
+  platform: "subsplash",
   serverUrl: "",
   streamKey: "",
 };
@@ -28,6 +31,9 @@ export default function Destinations() {
   const [draft, setDraft] = useState<DestinationDraft>(emptyDraft);
   const [formOpen, setFormOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const justConnectedYoutube = searchParams.get("connected") === "youtube";
 
   async function refresh() {
     const [dests, statusMap] = await Promise.all([api.listDestinations(), api.relayStatus()]);
@@ -40,6 +46,13 @@ export default function Destinations() {
     const interval = setInterval(() => refresh().catch(() => {}), 3000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (justConnectedYoutube) {
+      const timeout = setTimeout(() => setSearchParams({}, { replace: true }), 5000);
+      return () => clearTimeout(timeout);
+    }
+  }, [justConnectedYoutube, setSearchParams]);
 
   function startCreate() {
     setEditingId(null);
@@ -83,10 +96,14 @@ export default function Destinations() {
   }
 
   async function handleToggle(destination: Destination) {
-    if (destination.enabled) {
-      await api.disableDestination(destination.id);
-    } else {
-      await api.enableDestination(destination.id);
+    try {
+      if (destination.enabled) {
+        await api.disableDestination(destination.id);
+      } else {
+        await api.enableDestination(destination.id);
+      }
+    } catch (err) {
+      setError((err as Error).message);
     }
     await refresh();
   }
@@ -95,9 +112,15 @@ export default function Destinations() {
     <div>
       <div className="page-header">
         <h2>Destinations</h2>
-        <button onClick={startCreate}>+ Add destination</button>
+        <div className="header-actions">
+          <a className="button-link" href="/api/youtube/auth">
+            Connect YouTube channel
+          </a>
+          <button onClick={startCreate}>+ Add destination</button>
+        </div>
       </div>
 
+      {justConnectedYoutube && <p className="success">YouTube channel connected.</p>}
       {error && <p className="error">{error}</p>}
 
       <table className="destinations-table">
@@ -115,20 +138,28 @@ export default function Destinations() {
             <tr key={d.id}>
               <td>{d.name}</td>
               <td>{d.platform}</td>
-              <td>{d.hasStreamKey ? d.streamKeyPreview : <em>not set</em>}</td>
+              <td>
+                {d.platform === "youtube" ? (
+                  <em>connected account</em>
+                ) : d.hasStreamKey ? (
+                  d.streamKeyPreview
+                ) : (
+                  <em>not set</em>
+                )}
+              </td>
               <td>
                 <StatusBadge enabled={d.enabled} status={statuses[d.id]} />
               </td>
               <td className="actions">
                 <button onClick={() => handleToggle(d)}>{d.enabled ? "Disable" : "Enable"}</button>
-                <button onClick={() => startEdit(d)}>Edit</button>
+                {d.platform !== "youtube" && <button onClick={() => startEdit(d)}>Edit</button>}
                 <button onClick={() => handleDelete(d.id)}>Delete</button>
               </td>
             </tr>
           ))}
           {destinations.length === 0 && (
             <tr>
-              <td colSpan={5}>No destinations yet — add YouTube or Subsplash to get started.</td>
+              <td colSpan={5}>No destinations yet — connect YouTube or add Subsplash to get started.</td>
             </tr>
           )}
         </tbody>
@@ -151,7 +182,7 @@ export default function Destinations() {
               value={draft.platform}
               onChange={(e) => setDraft({ ...draft, platform: e.target.value as Platform })}
             >
-              {PLATFORMS.map((p) => (
+              {STATIC_PLATFORMS.map((p) => (
                 <option key={p.value} value={p.value}>
                   {p.label}
                 </option>
@@ -162,7 +193,7 @@ export default function Destinations() {
             Server URL
             <input
               required
-              placeholder="rtmp://a.rtmp.youtube.com/live2"
+              placeholder="rtmp://ingest.example.com/live"
               value={draft.serverUrl}
               onChange={(e) => setDraft({ ...draft, serverUrl: e.target.value })}
             />

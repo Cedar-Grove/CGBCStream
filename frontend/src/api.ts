@@ -7,6 +7,7 @@ export interface Destination {
   serverUrl: string;
   hasStreamKey: boolean;
   streamKeyPreview: string;
+  youtubeAccountId: string | null;
   enabled: boolean;
   createdAt: string;
 }
