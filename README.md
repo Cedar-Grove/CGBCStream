@@ -7,7 +7,7 @@ build-phase breakdown.
 
 All planned phases (1–6) are done: the ingest→relay pipeline,
 configurable destinations with a web UI, a live input preview, YouTube
-OAuth + broadcast creation, a scheduler, and basic login-gated access
+OAuth + broadcast creation, a scheduler, and Google-login-gated access
 with stream session history. Facebook is stubbed as a future adapter,
 same pattern as the other platforms.
 
@@ -16,15 +16,37 @@ same pattern as the other platforms.
 ```sh
 cp .env.example .env
 # edit .env: set ENCRYPTION_KEY (encrypts stream keys/refresh tokens at
-# rest) and ADMIN_PASSWORD (gates the whole UI/API) to long random values
+# rest) — see "Login setup" below for the Google OAuth vars
 
 docker compose up --build
 ```
 
-Open `http://<this-machine-ip>:3000` and sign in with `ADMIN_PASSWORD`
-— there's one shared password for all operators, no individual
-accounts. **The app will not let anyone in until `ADMIN_PASSWORD` is
-set**, so set it before your first `docker compose up`.
+Open `http://<this-machine-ip>:3000` and click **Sign in with Google**
+— only `cedargroveleeds.org` and `cedargroveleedsmedia.org` accounts are
+accepted (see setup below). **The app will not let anyone in until the
+`GOOGLE_LOGIN_*` vars are set**, so complete that setup before your
+first `docker compose up`.
+
+### Login setup (Google Workspace OAuth)
+
+This is separate from the YouTube channel connection below — it's for
+signing into CGBCStream itself.
+
+1. Google Cloud Console → APIs & Services → Credentials → Create OAuth
+   client ID → Web application (you can reuse the same client you
+   create for YouTube below — just add both redirect URIs to it).
+2. Add an authorized redirect URI:
+   `http://<this-machine-ip>:3000/api/auth/google/callback`
+3. In `.env`, set `GOOGLE_LOGIN_CLIENT_ID`, `GOOGLE_LOGIN_CLIENT_SECRET`,
+   `GOOGLE_LOGIN_REDIRECT_URI` (matching the URI above), and
+   `ALLOWED_GOOGLE_DOMAINS` (defaults to
+   `cedargroveleeds.org,cedargroveleedsmedia.org` in `.env.example`).
+4. Restart (`docker compose up -d --build`).
+
+Anyone signing in with a Google account outside those domains is
+rejected after Google's consent screen (checked server-side against
+the ID token's email and `hd` claim) — there's no way to bypass this
+from the client.
 
 - MediaMTX listens for the incoming RTMP push on port `1935`.
 - The web UI + API is on port `3000`.

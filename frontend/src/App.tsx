@@ -9,21 +9,26 @@ import SchedulePage from "./pages/Schedule";
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
 
   useEffect(() => {
     api
       .me()
-      .then((r) => setAuthenticated(r.authenticated))
+      .then((r) => {
+        setAuthenticated(r.authenticated);
+        setEmail(r.email);
+      })
       .catch(() => setAuthenticated(false));
   }, []);
 
   async function handleLogout() {
     await api.logout();
     setAuthenticated(false);
+    setEmail(null);
   }
 
   if (authenticated === null) return null;
-  if (!authenticated) return <Login onSuccess={() => setAuthenticated(true)} />;
+  if (!authenticated) return <Login />;
 
   return (
     <div className="app">
@@ -37,9 +42,12 @@ export default function App() {
           <NavLink to="/schedule">Schedule</NavLink>
           <NavLink to="/history">History</NavLink>
         </nav>
-        <button className="logout-button" onClick={handleLogout}>
-          Log out
-        </button>
+        <div className="header-account">
+          {email && <span className="muted">{email}</span>}
+          <button className="logout-button" onClick={handleLogout}>
+            Log out
+          </button>
+        </div>
       </header>
       <main>
         <Routes>

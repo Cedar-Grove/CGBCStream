@@ -4,26 +4,34 @@ export const COOKIE_NAME = "cgbc_session";
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
-// In-memory session store — fine for a single-instance backend; a
-// restart simply signs everyone out (they log back in with the shared
-// admin password).
-const sessions = new Map<string, number>();
+interface SessionRecord {
+  email: string;
+  expiresAt: number;
+}
 
-export function createSession(): string {
+// In-memory session store — fine for a single-instance backend; a
+// restart simply signs everyone out (they sign back in with Google).
+const sessions = new Map<string, SessionRecord>();
+
+export function createSession(email: string): string {
   const token = randomUUID();
-  sessions.set(token, Date.now() + SESSION_TTL_MS);
+  sessions.set(token, { email, expiresAt: Date.now() + SESSION_TTL_MS });
   return token;
 }
 
-export function isValidSession(token: string | undefined): boolean {
-  if (!token) return false;
-  const expiresAt = sessions.get(token);
-  if (!expiresAt) return false;
-  if (Date.now() > expiresAt) {
+export function getSession(token: string | undefined): SessionRecord | undefined {
+  if (!token) return undefined;
+  const record = sessions.get(token);
+  if (!record) return undefined;
+  if (Date.now() > record.expiresAt) {
     sessions.delete(token);
-    return false;
+    return undefined;
   }
-  return true;
+  return record;
+}
+
+export function isValidSession(token: string | undefined): boolean {
+  return !!getSession(token);
 }
 
 export function destroySession(token: string | undefined): void {

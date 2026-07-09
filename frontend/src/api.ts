@@ -116,8 +116,6 @@ export const api = {
     request<Schedule>(`/schedules/${id}`, { method: "PUT", body: JSON.stringify(input) }),
   deleteSchedule: (id: string) => request<void>(`/schedules/${id}`, { method: "DELETE" }),
   listHistory: () => request<StreamSession[]>("/history"),
-  login: (password: string) =>
-    request<{ ok: true }>("/auth/login", { method: "POST", body: JSON.stringify({ password }) }),
   logout: () => request<{ ok: true }>("/auth/logout", { method: "POST" }),
-  me: () => request<{ authenticated: boolean }>("/auth/me"),
+  me: () => request<{ authenticated: boolean; email: string | null }>("/auth/me"),
 };

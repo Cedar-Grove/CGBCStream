@@ -1,34 +1,38 @@
-import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { COOKIE_NAME, createSession, destroySession, isValidSession } from "./session.js";
-
-function passwordMatches(candidate: string, expected: string): boolean {
-  const a = Buffer.from(candidate);
-  const b = Buffer.from(expected);
-  // timingSafeEqual throws on length mismatch, so compare lengths first —
-  // still safe since password length isn't the secret being protected.
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
+import { getLoginUrl, handleLoginCallback, isDomainAllowed } from "./googleAuth.js";
+import { COOKIE_NAME, createSession, destroySession, getSession } from "./session.js";
 
 export function registerAuthRoutes(app: FastifyInstance): void {
-  app.post("/api/auth/login", async (req, reply) => {
-    const { password } = (req.body as { password?: string } | undefined) ?? {};
-    const expected = process.env.ADMIN_PASSWORD;
-    if (!expected) {
-      return reply.code(500).send({ error: "ADMIN_PASSWORD is not configured on the server" });
+  app.get("/api/auth/login", async (_req, reply) => {
+    try {
+      return reply.redirect(getLoginUrl());
+    } catch (err) {
+      return reply.code(500).send({ error: (err as Error).message });
     }
-    if (!password || !passwordMatches(password, expected)) {
-      return reply.code(401).send({ error: "incorrect password" });
+  });
+
+  app.get("/api/auth/google/callback", async (req, reply) => {
+    const { code } = req.query as { code?: string };
+    if (!code) return reply.code(400).send({ error: "missing code" });
+
+    try {
+      const identity = await handleLoginCallback(code);
+      if (!isDomainAllowed(identity)) {
+        app.log.warn(`rejected sign-in from ${identity.email} — domain not allowed`);
+        return reply.redirect("/?authError=domain");
+      }
+      const token = createSession(identity.email);
+      reply.setCookie(COOKIE_NAME, token, {
+        path: "/",
+        httpOnly: true,
+        sameSite: "lax",
+        maxAge: 60 * 60 * 24 * 30,
+      });
+      return reply.redirect("/");
+    } catch (err) {
+      app.log.error(err);
+      return reply.redirect("/?authError=failed");
     }
-    const token = createSession();
-    reply.setCookie(COOKIE_NAME, token, {
-      path: "/",
-      httpOnly: true,
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 30,
-    });
-    return { ok: true };
   });
 
   app.post("/api/auth/logout", async (req, reply) => {
@@ -37,7 +41,8 @@ export function registerAuthRoutes(app: FastifyInstance): void {
     return { ok: true };
   });
 
-  app.get("/api/auth/me", async (req) => ({
-    authenticated: isValidSession(req.cookies[COOKIE_NAME]),
-  }));
+  app.get("/api/auth/me", async (req) => {
+    const session = getSession(req.cookies[COOKIE_NAME]);
+    return { authenticated: !!session, email: session?.email ?? null };
+  });
 }

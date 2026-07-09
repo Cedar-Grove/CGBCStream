@@ -68,8 +68,11 @@ Blackmagic Web Presenter
   keys are encrypted at rest (AES-256-GCM, key derived from an
   `ENCRYPTION_KEY` env passphrase) and the API never returns the
   plaintext key back to the frontend, only a masked preview.
-- Session-based auth (small number of admin accounts — this controls
-  live broadcast infrastructure, not public-facing).
+- "Sign in with Google" auth, restricted server-side to the
+  `cedargroveleeds.org` / `cedargroveleedsmedia.org` Workspace domains
+  (checked against both the ID token's email and its `hd` claim) — this
+  controls live broadcast infrastructure, not public-facing. Separate
+  OAuth client/purpose from the YouTube channel-connect flow.
 
 **Frontend** (React + TypeScript, Vite):
 - **Dashboard** — live input preview (what the Web Presenter is currently
@@ -115,8 +118,8 @@ Web Presenter's VLAN so its configured RTMP target doesn't break.
    autoStart doesn't go live early), starts/stops configured
    destinations at the scheduled window, Schedule UI.
 6. ✅ **Hardening** — crash recovery/reconciliation on restart (from
-   phase 2/4), shared-password session auth gating the whole
-   UI/API, stream session history log + History UI.
+   phase 2/4), Google Workspace OAuth login (domain-restricted) gating
+   the whole UI/API, stream session history log + History UI.
 7. **Future** — Facebook Live adapter (same `platform` interface as
    YouTube/Subsplash).
 
