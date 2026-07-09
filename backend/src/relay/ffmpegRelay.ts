@@ -7,12 +7,15 @@ export interface RelayState {
   startedAt: string | null;
   restarts: number;
   lastError: string | null;
+  bitrateKbps: number | null;
 }
 
 // Backoff for auto-restart after an unexpected ffmpeg exit (e.g. source
 // dropped mid-service) — caps out so a persistently down source doesn't
 // spin-loop ffmpeg.
 const RESTART_BACKOFF_MS = [1000, 2000, 5000, 10000, 30000];
+
+const BITRATE_PATTERN = /bitrate=\s*([\d.]+)\s*kbits\/s/;
 
 export class FfmpegRelay {
   private process: ChildProcessWithoutNullStreams | null = null;
@@ -21,6 +24,7 @@ export class FfmpegRelay {
     startedAt: null,
     restarts: 0,
     lastError: null,
+    bitrateKbps: null,
   };
   private stopRequested = false;
   private restartTimer: NodeJS.Timeout | null = null;
@@ -51,13 +55,17 @@ export class FfmpegRelay {
     this.process = null;
     this.state.status = "stopped";
     this.state.startedAt = null;
+    this.state.bitrateKbps = null;
   }
 
   private spawnProcess(): void {
     this.state.status = "starting";
+    this.state.bitrateKbps = null;
 
     const child = spawn("ffmpeg", [
+      "-nostdin",
       "-loglevel", "warning",
+      "-stats",
       "-i", this.sourceUrl,
       "-c", "copy",
       "-f", "flv",
@@ -67,7 +75,10 @@ export class FfmpegRelay {
 
     child.stderr.on("data", (chunk: Buffer) => {
       const line = chunk.toString().trim();
-      if (line) console.log(`[ffmpeg] ${line}`);
+      if (!line) return;
+      console.log(`[ffmpeg] ${line}`);
+      const match = line.match(BITRATE_PATTERN);
+      if (match) this.state.bitrateKbps = Number(match[1]);
     });
 
     child.on("spawn", () => {
@@ -88,6 +99,7 @@ export class FfmpegRelay {
         return;
       }
       this.state.status = "error";
+      this.state.bitrateKbps = null;
       this.state.lastError = `ffmpeg exited (code=${code}, signal=${signal})`;
       this.scheduleRestart();
     });

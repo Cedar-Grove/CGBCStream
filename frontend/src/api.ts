@@ -25,6 +25,14 @@ export interface RelayState {
   startedAt: string | null;
   restarts: number;
   lastError: string | null;
+  bitrateKbps: number | null;
+}
+
+export interface InputStatus {
+  live: boolean;
+  tracks: string[];
+  bytesReceived: number;
+  checkedAt: string;
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -52,4 +60,5 @@ export const api = {
   disableDestination: (id: string) =>
     request<{ ok: true }>(`/destinations/${id}/disable`, { method: "POST" }),
   relayStatus: () => request<Record<string, RelayState>>("/relay/status"),
+  inputStatus: () => request<InputStatus>("/input/status"),
 };
