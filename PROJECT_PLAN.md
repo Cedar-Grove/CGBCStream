@@ -11,9 +11,17 @@ before each service.
 
 ## Decisions locked in
 
-- **Runs on-prem**, on a small always-on box on the same network as the
-  Web Presenter (mini-PC / NUC). Avoids depending on venue upload
-  bandwidth to reach a cloud relay and keeps latency low.
+- **Runs on-prem**, as a VM on the church's Proxmox host, on the same
+  network/VLAN as the Web Presenter. Avoids depending on venue upload
+  bandwidth to reach a cloud relay and keeps latency low. Since fan-out
+  is `-c copy` (remux, not transcode), a modest VM (2 vCPU / 2GB RAM) is
+  plenty — no need for a dedicated physical box or GPU passthrough.
+- **Ingest protocol is RTMP** (Web Presenter supports both RTMP and SRT).
+  SRT's main advantage — loss recovery/encryption over unreliable
+  networks — doesn't matter on a stable local LAN, so RTMP keeps things
+  simpler. MediaMTX supports SRT too, so switching later (e.g. if the
+  encoder ever needs to reach the relay over the internet) is just a
+  config/URL change, not an architecture change.
 - **Fan-out is self-hosted via ffmpeg** — no third-party restream SaaS.
 - **Subsplash is treated as a static RTMP destination**: one fixed
   ingest URL + stream key, configured once and left "on" — no API calls
@@ -71,11 +79,12 @@ Blackmagic Web Presenter
   per-entry "auto-create YouTube broadcast" toggle (on by default),
   which destinations to bring up automatically.
 
-**Deployment**: Docker Compose on the on-prem box — `mediamtx` container
+**Deployment**: Docker Compose on a Proxmox VM — `mediamtx` container
 for ingest, `cgbcstream-app` container (backend + built frontend, ffmpeg
 installed) for everything else. `restart: always`; on restart the
 backend reconciles actual ffmpeg/YouTube state against the DB so a reboot
-mid-service self-heals.
+mid-service self-heals. The VM needs a static IP/DHCP reservation on the
+Web Presenter's VLAN so its configured RTMP target doesn't break.
 
 ## Data model (initial)
 
@@ -106,9 +115,9 @@ mid-service self-heals.
 
 ## Open items to confirm before/at each phase
 
-- Exact Web Presenter output: RTMP push vs. SRT — check the unit's
-  firmware/config to set MediaMTX's ingest protocol accordingly.
 - YouTube OAuth: needs a Google Cloud project + OAuth client credentials
   (channel must be enabled for live streaming).
 - Subsplash RTMP URL + stream key for the church's channel (obtain from
   Subsplash Broadcaster settings).
+- Proxmox VM specs/IP allocation (2 vCPU / 2GB RAM is the starting
+  estimate — revisit if more destinations are added later).

@@ -1,0 +1,21 @@
+services:
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: cgbcstream-mediamtx
+    restart: always
+    ports:
+      - "1935:1935" # RTMP ingest — point the Web Presenter here
+      - "8888:8888" # HLS — used by the dashboard preview later
+    volumes:
+      - ./mediamtx/mediamtx.yml:/mediamtx.yml:ro
+
+  app:
+    build: ./backend
+    container_name: cgbcstream-app
+    restart: always
+    depends_on:
+      - mediamtx
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env

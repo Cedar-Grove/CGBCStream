@@ -1,0 +1,12 @@
+# Minimal MediaMTX config for CGBCStream's ingest server.
+# The Blackmagic Web Presenter pushes RTMP to rtmp://<vm-ip>:1935/live
+# ffmpeg (in the app container) reads it back from rtmp://mediamtx:1935/live
+
+rtmpAddress: :1935
+
+# HLS output, used later for the dashboard's input preview.
+hlsAddress: :8888
+
+paths:
+  live:
+    source: publisher
