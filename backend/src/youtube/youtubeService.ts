@@ -18,7 +18,11 @@ function getOAuthClient(): OAuth2Client {
 export function getAuthUrl(): string {
   return getOAuthClient().generateAuthUrl({
     access_type: "offline",
-    prompt: "consent", // forces a refresh_token even on a re-connect
+    // "consent" forces a refresh_token even on a re-connect; "select_account"
+    // is what reliably surfaces Google's "choose a channel/brand account"
+    // step for accounts that manage a channel they don't personally own —
+    // without it, Google silently picks whichever channel was last active.
+    prompt: "consent select_account",
     scope: SCOPES,
   });
 }
