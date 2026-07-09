@@ -78,10 +78,15 @@ export interface StreamSession {
   status: SessionStatus;
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  // Only set Content-Type when there's actually a body — Fastify's JSON
+  // parser rejects an empty body sent with this header (400, before the
+  // route handler even runs), which silently broke every bodyless POST
+  // (logout, enable, disable).
+  const headers: Record<string, string> = options.body ? { "Content-Type": "application/json" } : {};
   const res = await fetch(`/api${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers: { ...headers, ...(options.headers as Record<string, string> | undefined) },
   });
   if (res.status === 401 && path !== "/auth/me" && !path.startsWith("/auth/")) {
     // Session expired mid-use — reload so App's auth check shows the login screen.
