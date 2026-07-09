@@ -5,9 +5,11 @@ live to YouTube, Subsplash, and (future) Facebook. See
 [PROJECT_PLAN.md](./PROJECT_PLAN.md) for the full architecture and
 build-phase breakdown.
 
-Phases 1–4 are done: the ingest→relay pipeline, configurable
-destinations with a web UI, a live input preview, and YouTube OAuth +
-broadcast creation. The scheduler and auth/hardening are not built yet.
+Phases 1–5 are done: the ingest→relay pipeline, configurable
+destinations with a web UI, a live input preview, YouTube OAuth +
+broadcast creation, and a scheduler that automates it. Auth/hardening
+(phase 6) is not built yet — there's no login, so don't expose this
+past your local network.
 
 ## Running it
 
@@ -31,8 +33,12 @@ Open `http://<this-machine-ip>:3000` → **Destinations**:
 - **YouTube**: "Connect YouTube channel" (see setup below) — no manual
   RTMP details needed, a fresh key is created per broadcast.
 
-Click **Enable** to go live to a destination. The **Dashboard** shows
-the incoming feed and live status per destination.
+Click **Enable** to go live to a destination manually, or set up
+**Schedule** entries (weekly recurring or one-off, with a start time,
+duration, which destinations to use, and whether to auto-create a
+YouTube broadcast) so services go live automatically without touching
+the UI. The **Dashboard** shows the incoming feed and live status per
+destination.
 
 ### YouTube setup
 

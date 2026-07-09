@@ -1,16 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { RelayManager } from "../relay/relayManager.js";
-import { getRefreshToken } from "../youtube/accountsRepository.js";
-import { createAndStartBroadcast } from "../youtube/youtubeService.js";
-import {
-  createDestination,
-  deleteDestination,
-  getDestinationMeta,
-  getFullRtmpUrl,
-  listDestinations,
-  setEnabled,
-  updateDestination,
-} from "./repository.js";
+import { disableDestination, enableDestination } from "./service.js";
+import { createDestination, deleteDestination, listDestinations, updateDestination } from "./repository.js";
 import { PLATFORMS, type DestinationInput } from "./types.js";
 
 function isValidPlatform(value: unknown): value is DestinationInput["platform"] {
@@ -58,40 +49,17 @@ export function registerDestinationRoutes(app: FastifyInstance, relayManager: Re
 
   app.post("/api/destinations/:id/enable", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const meta = getDestinationMeta(id);
-    if (!meta) return reply.code(404).send({ error: "not found" });
-
-    if (meta.platform === "youtube") {
-      if (!meta.youtubeAccountId) {
-        return reply.code(400).send({ error: "no YouTube account linked to this destination" });
-      }
-      const refreshToken = getRefreshToken(meta.youtubeAccountId);
-      if (!refreshToken) {
-        return reply.code(400).send({ error: "linked YouTube account no longer exists" });
-      }
-      try {
-        const { rtmpUrl, broadcastId } = await createAndStartBroadcast(refreshToken, meta.name, new Date());
-        setEnabled(id, true);
-        relayManager.start(id, rtmpUrl);
-        return { ok: true, broadcastId };
-      } catch (err) {
-        app.log.error(err);
-        return reply.code(502).send({ error: (err as Error).message });
-      }
+    const result = await enableDestination(relayManager, id);
+    if (!result.ok) {
+      return reply.code(result.status ?? 400).send({ error: result.error });
     }
-
-    const rtmpUrl = getFullRtmpUrl(id);
-    if (!rtmpUrl) return reply.code(404).send({ error: "not found" });
-    setEnabled(id, true);
-    relayManager.start(id, rtmpUrl);
-    return { ok: true };
+    return result;
   });
 
   app.post("/api/destinations/:id/disable", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const updated = setEnabled(id, false);
-    if (!updated) return reply.code(404).send({ error: "not found" });
-    relayManager.stop(id);
+    const ok = disableDestination(relayManager, id);
+    if (!ok) return reply.code(404).send({ error: "not found" });
     return { ok: true };
   });
 }

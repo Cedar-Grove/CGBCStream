@@ -134,6 +134,18 @@ table.destinations-table td {
   font-size: 0.9rem;
 }
 
+.destination-form fieldset {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+}
+
+.checkbox-label {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.4rem !important;
+}
+
 .form-actions {
   display: flex;
   gap: 0.5rem;

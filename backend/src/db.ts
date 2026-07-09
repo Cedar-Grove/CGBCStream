@@ -25,6 +25,20 @@ db.exec(`
     refresh_token TEXT NOT NULL,
     created_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS schedules (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    recurrence_type TEXT NOT NULL,
+    day_of_week INTEGER,
+    date TEXT,
+    time TEXT NOT NULL,
+    duration_minutes INTEGER NOT NULL,
+    auto_create_youtube INTEGER NOT NULL DEFAULT 1,
+    destination_ids TEXT NOT NULL DEFAULT '[]',
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+  );
 `);
 
 /** Adds a column to an existing table if it isn't there yet — SQLite has no "ADD COLUMN IF NOT EXISTS". */

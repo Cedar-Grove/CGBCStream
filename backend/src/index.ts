@@ -7,6 +7,8 @@ import { registerDestinationRoutes } from "./destinations/routes.js";
 import { registerInputRoutes } from "./input/routes.js";
 import { RelayManager } from "./relay/relayManager.js";
 import { registerRelayRoutes } from "./relay/routes.js";
+import { registerScheduleRoutes } from "./schedule/routes.js";
+import { Scheduler } from "./schedule/scheduler.js";
 import { registerYoutubeRoutes } from "./youtube/routes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -24,6 +26,7 @@ registerDestinationRoutes(app, relayManager);
 registerRelayRoutes(app, relayManager);
 registerInputRoutes(app);
 registerYoutubeRoutes(app);
+registerScheduleRoutes(app);
 
 // The built frontend (backend/public, produced by the frontend build in
 // Docker) is served from here; absent in plain backend-only dev mode.
@@ -39,6 +42,9 @@ if (existsSync(publicDir)) {
 }
 
 relayManager.reconcile();
+
+const scheduler = new Scheduler(relayManager);
+scheduler.start();
 
 app.listen({ port: PORT, host: "0.0.0.0" }).catch((err) => {
   app.log.error(err);

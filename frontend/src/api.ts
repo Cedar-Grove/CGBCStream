@@ -36,6 +36,34 @@ export interface InputStatus {
   checkedAt: string;
 }
 
+export type RecurrenceType = "weekly" | "once";
+
+export interface Schedule {
+  id: string;
+  title: string;
+  recurrenceType: RecurrenceType;
+  dayOfWeek: number | null;
+  date: string | null;
+  time: string;
+  durationMinutes: number;
+  autoCreateYoutube: boolean;
+  destinationIds: string[];
+  active: boolean;
+  createdAt: string;
+}
+
+export interface ScheduleDraft {
+  title: string;
+  recurrenceType: RecurrenceType;
+  dayOfWeek?: number;
+  date?: string;
+  time: string;
+  durationMinutes: number;
+  autoCreateYoutube: boolean;
+  destinationIds: string[];
+  active: boolean;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     headers: { "Content-Type": "application/json" },
@@ -62,4 +90,10 @@ export const api = {
     request<{ ok: true }>(`/destinations/${id}/disable`, { method: "POST" }),
   relayStatus: () => request<Record<string, RelayState>>("/relay/status"),
   inputStatus: () => request<InputStatus>("/input/status"),
+  listSchedules: () => request<Schedule[]>("/schedules"),
+  createSchedule: (input: ScheduleDraft) =>
+    request<Schedule>("/schedules", { method: "POST", body: JSON.stringify(input) }),
+  updateSchedule: (id: string, input: Partial<ScheduleDraft>) =>
+    request<Schedule>(`/schedules/${id}`, { method: "PUT", body: JSON.stringify(input) }),
+  deleteSchedule: (id: string) => request<void>(`/schedules/${id}`, { method: "DELETE" }),
 };
