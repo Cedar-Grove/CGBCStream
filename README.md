@@ -5,21 +5,26 @@ live to YouTube, Subsplash, and (future) Facebook. See
 [PROJECT_PLAN.md](./PROJECT_PLAN.md) for the full architecture and
 build-phase breakdown.
 
-Phases 1–5 are done: the ingest→relay pipeline, configurable
-destinations with a web UI, a live input preview, YouTube OAuth +
-broadcast creation, and a scheduler that automates it. Auth/hardening
-(phase 6) is not built yet — there's no login, so don't expose this
-past your local network.
+All planned phases (1–6) are done: the ingest→relay pipeline,
+configurable destinations with a web UI, a live input preview, YouTube
+OAuth + broadcast creation, a scheduler, and basic login-gated access
+with stream session history. Facebook is stubbed as a future adapter,
+same pattern as the other platforms.
 
 ## Running it
 
 ```sh
 cp .env.example .env
-# edit .env: set ENCRYPTION_KEY to a long random passphrase (used to
-# encrypt destination stream keys and YouTube refresh tokens at rest)
+# edit .env: set ENCRYPTION_KEY (encrypts stream keys/refresh tokens at
+# rest) and ADMIN_PASSWORD (gates the whole UI/API) to long random values
 
 docker compose up --build
 ```
+
+Open `http://<this-machine-ip>:3000` and sign in with `ADMIN_PASSWORD`
+— there's one shared password for all operators, no individual
+accounts. **The app will not let anyone in until `ADMIN_PASSWORD` is
+set**, so set it before your first `docker compose up`.
 
 - MediaMTX listens for the incoming RTMP push on port `1935`.
 - The web UI + API is on port `3000`.
@@ -27,7 +32,7 @@ docker compose up --build
 Point the Blackmagic Web Presenter's RTMP output at
 `rtmp://<this-machine-ip>:1935/live`.
 
-Open `http://<this-machine-ip>:3000` → **Destinations**:
+Then go to **Destinations**:
 - **Subsplash / Facebook**: "+ Add destination" → name, server URL,
   stream key.
 - **YouTube**: "Connect YouTube channel" (see setup below) — no manual
@@ -38,7 +43,8 @@ Click **Enable** to go live to a destination manually, or set up
 duration, which destinations to use, and whether to auto-create a
 YouTube broadcast) so services go live automatically without touching
 the UI. The **Dashboard** shows the incoming feed and live status per
-destination.
+destination, and **History** logs every stream session (manual or
+scheduled) with start/end time and duration.
 
 ### YouTube setup
 

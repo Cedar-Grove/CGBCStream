@@ -10,12 +10,17 @@ import type { SchedulePublic } from "./types.js";
 const LEAD_MINUTES = 10;
 const TICK_MS = 30_000; // twice a minute so we don't miss the exact start/end minute
 
+interface PreparedBroadcast {
+  rtmpUrl: string;
+  broadcastId: string;
+}
+
 interface OccurrenceState {
   windowStartIso: string;
   prepared: boolean;
   started: boolean;
   stopped: boolean;
-  preparedRtmpUrls: Map<string, string>;
+  preparedBroadcasts: Map<string, PreparedBroadcast>;
 }
 
 /**
@@ -59,7 +64,13 @@ export class Scheduler {
     const windowStartIso = window.start.toISOString();
     let state = this.occurrenceState.get(schedule.id);
     if (!state || state.windowStartIso !== windowStartIso) {
-      state = { windowStartIso, prepared: false, started: false, stopped: false, preparedRtmpUrls: new Map() };
+      state = {
+        windowStartIso,
+        prepared: false,
+        started: false,
+        stopped: false,
+        preparedBroadcasts: new Map(),
+      };
       this.occurrenceState.set(schedule.id, state);
     }
 
@@ -97,8 +108,12 @@ export class Scheduler {
         continue;
       }
       try {
-        const { rtmpUrl } = await createAndStartBroadcast(refreshToken, schedule.title, scheduledStart);
-        state.preparedRtmpUrls.set(destinationId, rtmpUrl);
+        const { rtmpUrl, broadcastId } = await createAndStartBroadcast(
+          refreshToken,
+          schedule.title,
+          scheduledStart,
+        );
+        state.preparedBroadcasts.set(destinationId, { rtmpUrl, broadcastId });
       } catch (err) {
         console.error(`[scheduler] failed to pre-create YouTube broadcast for ${destinationId}:`, err);
       }
@@ -107,12 +122,18 @@ export class Scheduler {
 
   private async startDestinations(schedule: SchedulePublic, state: OccurrenceState): Promise<void> {
     for (const destinationId of schedule.destinationIds) {
-      const preparedUrl = state.preparedRtmpUrls.get(destinationId);
-      if (preparedUrl) {
-        enableDestinationWithUrl(this.relayManager, destinationId, preparedUrl);
+      const prepared = state.preparedBroadcasts.get(destinationId);
+      if (prepared) {
+        enableDestinationWithUrl(
+          this.relayManager,
+          destinationId,
+          prepared.rtmpUrl,
+          schedule.id,
+          prepared.broadcastId,
+        );
         continue;
       }
-      const result = await enableDestination(this.relayManager, destinationId, schedule.title);
+      const result = await enableDestination(this.relayManager, destinationId, schedule.title, schedule.id);
       if (!result.ok) {
         console.error(`[scheduler] failed to enable destination ${destinationId}: ${result.error}`);
       }

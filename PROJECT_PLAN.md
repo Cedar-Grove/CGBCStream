@@ -114,8 +114,9 @@ Web Presenter's VLAN so its configured RTMP target doesn't break.
    broadcasts 10 min ahead of start (without feeding video yet, so
    autoStart doesn't go live early), starts/stops configured
    destinations at the scheduled window, Schedule UI.
-6. **Hardening** — crash recovery/reconciliation on restart, auth,
-   session history/logs.
+6. ✅ **Hardening** — crash recovery/reconciliation on restart (from
+   phase 2/4), shared-password session auth gating the whole
+   UI/API, stream session history log + History UI.
 7. **Future** — Facebook Live adapter (same `platform` interface as
    YouTube/Subsplash).
 

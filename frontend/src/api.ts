@@ -64,11 +64,30 @@ export interface ScheduleDraft {
   active: boolean;
 }
 
+export type SessionStatus = "running" | "completed" | "error";
+
+export interface StreamSession {
+  id: string;
+  destinationId: string | null;
+  destinationName: string;
+  platform: string;
+  scheduleId: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  youtubeBroadcastId: string | null;
+  status: SessionStatus;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     headers: { "Content-Type": "application/json" },
     ...options,
   });
+  if (res.status === 401 && path !== "/auth/me" && !path.startsWith("/auth/")) {
+    // Session expired mid-use — reload so App's auth check shows the login screen.
+    window.location.reload();
+    return new Promise<T>(() => {});
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}) as { error?: string });
     throw new Error(body.error ?? `Request failed: ${res.status}`);
@@ -96,4 +115,9 @@ export const api = {
   updateSchedule: (id: string, input: Partial<ScheduleDraft>) =>
     request<Schedule>(`/schedules/${id}`, { method: "PUT", body: JSON.stringify(input) }),
   deleteSchedule: (id: string) => request<void>(`/schedules/${id}`, { method: "DELETE" }),
+  listHistory: () => request<StreamSession[]>("/history"),
+  login: (password: string) =>
+    request<{ ok: true }>("/auth/login", { method: "POST", body: JSON.stringify({ password }) }),
+  logout: () => request<{ ok: true }>("/auth/logout", { method: "POST" }),
+  me: () => request<{ authenticated: boolean }>("/auth/me"),
 };

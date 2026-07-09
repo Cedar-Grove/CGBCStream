@@ -39,6 +39,18 @@ db.exec(`
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS stream_sessions (
+    id TEXT PRIMARY KEY,
+    destination_id TEXT,
+    destination_name TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    schedule_id TEXT,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    youtube_broadcast_id TEXT,
+    status TEXT NOT NULL
+  );
 `);
 
 /** Adds a column to an existing table if it isn't there yet — SQLite has no "ADD COLUMN IF NOT EXISTS". */
