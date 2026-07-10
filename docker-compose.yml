@@ -8,6 +8,11 @@ services:
       - "8888:8888" # HLS — used by the dashboard preview later
     volumes:
       - ./mediamtx/mediamtx.yml:/mediamtx.yml:ro
+    environment:
+      # Overrides the placeholder "pass" in mediamtx.yml's authInternalUsers
+      # (index 1, the "cgbcstream" API user) — MediaMTX's env-var config
+      # override syntax. Must match MEDIAMTX_API_PASSWORD below exactly.
+      - MTX_AUTHINTERNALUSERS_1_PASS=${MEDIAMTX_API_PASSWORD}
 
   app:
     build:

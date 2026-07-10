@@ -15,6 +15,29 @@ hlsAllowOrigin: "*"
 apiAddress: :9997
 api: yes
 
+# Defining authInternalUsers at all replaces MediaMTX's built-in default
+# list, so the "any" rule below has to be restated explicitly — otherwise
+# the Web Presenter's RTMP push and the HLS preview would stop working.
+# The API password itself comes from MTX_AUTHINTERNALUSERS_1_PASS (set via
+# docker-compose from MEDIAMTX_API_PASSWORD in .env) — MediaMTX's default
+# rules only allow unauthenticated API access from 127.0.0.1 inside its
+# own container, which the backend (a separate container) isn't.
+authInternalUsers:
+  - user: any
+    ips: []
+    permissions:
+      - action: publish
+      - action: read
+      - action: playback
+
+  - user: cgbcstream
+    pass: changeme
+    ips: []
+    permissions:
+      - action: api
+      - action: metrics
+      - action: pprof
+
 paths:
   live:
     source: publisher

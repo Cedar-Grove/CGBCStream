@@ -16,7 +16,9 @@ same pattern as the other platforms.
 ```sh
 cp .env.example .env
 # edit .env: set ENCRYPTION_KEY (encrypts stream keys/refresh tokens at
-# rest) — see "Login setup" below for the Google OAuth vars
+# rest) and MEDIAMTX_API_PASSWORD (any random string — shared secret so
+# the backend can query MediaMTX's control API for input status/preview)
+# — see "Login setup" below for the Google OAuth vars
 
 docker compose up --build
 ```
