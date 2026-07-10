@@ -151,6 +151,11 @@ table.destinations-table td {
   color: #92400e;
 }
 
+.badge-waiting {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
 .badge-error {
   background: #fee2e2;
   color: #b91c1c;

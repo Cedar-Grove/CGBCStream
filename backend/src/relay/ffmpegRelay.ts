@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { getInputStatus } from "../input/inputMonitor.js";
 
-export type RelayStatus = "stopped" | "starting" | "running" | "error";
+export type RelayStatus = "stopped" | "waiting" | "starting" | "running" | "error";
 
 export interface RelayState {
   status: RelayStatus;
@@ -10,10 +11,13 @@ export interface RelayState {
   bitrateKbps: number | null;
 }
 
-// Backoff for auto-restart after an unexpected ffmpeg exit (e.g. source
-// dropped mid-service) — caps out so a persistently down source doesn't
-// spin-loop ffmpeg.
+// Backoff for auto-restart after an unexpected ffmpeg exit while the input
+// genuinely was live (a real failure) — caps out so a persistent problem
+// doesn't spin-loop ffmpeg.
 const RESTART_BACKOFF_MS = [1000, 2000, 5000, 10000, 30000];
+
+// How often to re-check for input while armed but nothing's live yet.
+const WAITING_POLL_MS = 5000;
 
 const BITRATE_PATTERN = /bitrate=\s*([\d.]+)\s*kbits\/s/;
 
@@ -28,6 +32,7 @@ export class FfmpegRelay {
   };
   private stopRequested = false;
   private restartTimer: NodeJS.Timeout | null = null;
+  private waitingTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly sourceUrl: string,
@@ -39,10 +44,10 @@ export class FfmpegRelay {
   }
 
   start(): void {
-    if (this.process) return;
+    if (this.process || this.waitingTimer) return;
     this.stopRequested = false;
     this.state.restarts = 0;
-    this.spawnProcess();
+    this.attemptStart();
   }
 
   stop(): void {
@@ -51,11 +56,32 @@ export class FfmpegRelay {
       clearTimeout(this.restartTimer);
       this.restartTimer = null;
     }
+    if (this.waitingTimer) {
+      clearTimeout(this.waitingTimer);
+      this.waitingTimer = null;
+    }
     this.process?.kill("SIGTERM");
     this.process = null;
     this.state.status = "stopped";
     this.state.startedAt = null;
     this.state.bitrateKbps = null;
+  }
+
+  /** Only spawns ffmpeg once there's an actual signal to relay — being "enabled" with nothing to stream yet is normal, not an error. */
+  private async attemptStart(): Promise<void> {
+    if (this.stopRequested) return;
+    const input = await getInputStatus();
+    if (this.stopRequested) return;
+    if (!input.live) {
+      this.state.status = "waiting";
+      this.state.lastError = null;
+      this.waitingTimer = setTimeout(() => {
+        this.waitingTimer = null;
+        this.attemptStart();
+      }, WAITING_POLL_MS);
+      return;
+    }
+    this.spawnProcess();
   }
 
   private spawnProcess(): void {
@@ -98,11 +124,24 @@ export class FfmpegRelay {
         this.state.status = "stopped";
         return;
       }
-      this.state.status = "error";
       this.state.bitrateKbps = null;
-      this.state.lastError = `ffmpeg exited (code=${code}, signal=${signal})`;
-      this.scheduleRestart();
+      this.handleUnexpectedExit(code, signal);
     });
+  }
+
+  /** Distinguishes "the source disappeared" (expected, go back to waiting) from a genuine failure while input was actually live (real error, retry with backoff). */
+  private async handleUnexpectedExit(code: number | null, signal: NodeJS.Signals | null): Promise<void> {
+    if (this.stopRequested) return;
+    const input = await getInputStatus();
+    if (this.stopRequested) return;
+    if (!input.live) {
+      this.state.restarts = 0;
+      this.attemptStart();
+      return;
+    }
+    this.state.status = "error";
+    this.state.lastError = `ffmpeg exited (code=${code}, signal=${signal})`;
+    this.scheduleRestart();
   }
 
   private scheduleRestart(): void {
@@ -110,6 +149,7 @@ export class FfmpegRelay {
       RESTART_BACKOFF_MS[Math.min(this.state.restarts, RESTART_BACKOFF_MS.length - 1)];
     this.state.restarts += 1;
     this.restartTimer = setTimeout(() => {
+      this.restartTimer = null;
       if (!this.stopRequested) this.spawnProcess();
     }, delay);
   }

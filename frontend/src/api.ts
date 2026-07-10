@@ -19,7 +19,7 @@ export interface DestinationDraft {
   streamKey?: string;
 }
 
-export type RelayStatus = "stopped" | "starting" | "running" | "error";
+export type RelayStatus = "stopped" | "waiting" | "starting" | "running" | "error";
 
 export interface RelayState {
   status: RelayStatus;

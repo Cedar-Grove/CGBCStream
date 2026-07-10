@@ -16,6 +16,9 @@ export default function StatusBadge({
   if (status.status === "starting") {
     return <span className="badge badge-starting">Starting…</span>;
   }
+  if (status.status === "waiting") {
+    return <span className="badge badge-waiting">Waiting for stream</span>;
+  }
   return (
     <span className="badge badge-error" title={status.lastError ?? undefined}>
       Error
