@@ -4,8 +4,11 @@
 
 rtmpAddress: :1935
 
-# HLS output for the dashboard's input preview — CORS wide open since the
-# browser fetches segments directly from this port, not through the backend.
+# HLS output for the dashboard's input preview. Not published to the host
+# in docker-compose — the backend proxies it at /hls so the browser only
+# ever talks to the app's own origin (works through Cloudflare Tunnel,
+# reverse proxies, HTTPS, etc.). hlsAllowOrigin is harmless to leave wide
+# open even so, in case anything ever fetches this port directly.
 hlsAddress: :8888
 hlsAllowOrigin: "*"
 

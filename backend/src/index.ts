@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fastifyCookie from "@fastify/cookie";
+import fastifyHttpProxy from "@fastify/http-proxy";
 import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 import { registerAuthRoutes } from "./auth/routes.js";
@@ -26,13 +27,14 @@ const app = Fastify({ logger: true });
 
 app.register(fastifyCookie);
 
-// Every /api/* route requires a valid session cookie except login/logout/me
-// (needed to render the login screen itself) and health (used for container
-// healthchecks, not sensitive). Static assets stay public so the SPA shell
-// can load and show the login form — data lives behind the API, not the JS.
+// Every /api/* and /hls/* route requires a valid session cookie except
+// login/logout/me (needed to render the login screen itself) and health
+// (used for container healthchecks, not sensitive). Static assets stay
+// public so the SPA shell can load and show the login form — data lives
+// behind the API, not the JS.
 app.addHook("onRequest", async (req, reply) => {
   const url = req.raw.url ?? "";
-  if (!url.startsWith("/api/")) return;
+  if (!url.startsWith("/api/") && !url.startsWith("/hls/")) return;
   if (url.startsWith("/api/auth/") || url === "/api/health") return;
   if (!isValidSession(req.cookies[COOKIE_NAME])) {
     return reply.code(401).send({ error: "authentication required" });
@@ -48,6 +50,16 @@ registerInputRoutes(app);
 registerYoutubeRoutes(app);
 registerScheduleRoutes(app);
 registerHistoryRoutes(app);
+
+// Proxies MediaMTX's HLS output so the browser only ever talks to this
+// same origin — direct browser access to <host>:8888 breaks whenever the
+// app is reached through something that only tunnels one port (Cloudflare
+// Tunnel, a reverse proxy, etc.) or over HTTPS (mixed-content blocked).
+app.register(fastifyHttpProxy, {
+  upstream: "http://mediamtx:8888",
+  prefix: "/hls",
+  rewritePrefix: "",
+});
 
 // The built frontend (backend/public, produced by the frontend build in
 // Docker) is served from here; absent in plain backend-only dev mode.

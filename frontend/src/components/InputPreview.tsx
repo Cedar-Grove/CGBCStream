@@ -1,9 +1,13 @@
 import Hls from "hls.js";
 import { useEffect, useRef } from "react";
 
-// MediaMTX serves HLS directly (not proxied through the backend API) —
-// same host, fixed port from docker-compose.
-const HLS_URL = `${window.location.protocol}//${window.location.hostname}:8888/live/index.m3u8`;
+// Proxied through the backend at /hls (see backend/src/index.ts) rather
+// than hitting MediaMTX's :8888 directly — a direct port doesn't work when
+// the app is reached through something that only tunnels one port
+// (Cloudflare Tunnel, a reverse proxy) or over HTTPS (mixed-content
+// blocked). Same origin as the page always works regardless of how it's
+// reached.
+const HLS_URL = `${window.location.protocol}//${window.location.host}/hls/live/index.m3u8`;
 
 export default function InputPreview({ live }: { live: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);

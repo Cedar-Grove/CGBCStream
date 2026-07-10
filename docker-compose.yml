@@ -5,7 +5,6 @@ services:
     restart: always
     ports:
       - "1935:1935" # RTMP ingest — point the Web Presenter here
-      - "8888:8888" # HLS — used by the dashboard preview later
     volumes:
       - ./mediamtx/mediamtx.yml:/mediamtx.yml:ro
     environment:
