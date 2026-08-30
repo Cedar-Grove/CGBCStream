@@ -40,6 +40,21 @@ db.exec(`
     created_at TEXT NOT NULL
   );
 
+  -- A YouTube broadcast reserved ahead of a scheduled occurrence. Keyed by
+  -- (schedule, destination, occurrence) so two services on the same day each
+  -- resolve to their own broadcast. rtmp_url embeds the stream key, so it is
+  -- encrypted at rest like destinations.stream_key.
+  CREATE TABLE IF NOT EXISTS prepared_broadcasts (
+    id TEXT PRIMARY KEY,
+    schedule_id TEXT NOT NULL,
+    destination_id TEXT NOT NULL,
+    occurrence_start TEXT NOT NULL,
+    broadcast_id TEXT NOT NULL,
+    rtmp_url TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (schedule_id, destination_id, occurrence_start)
+  );
+
   CREATE TABLE IF NOT EXISTS stream_sessions (
     id TEXT PRIMARY KEY,
     destination_id TEXT,

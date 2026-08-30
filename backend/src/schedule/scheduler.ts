@@ -3,35 +3,42 @@ import { getDestinationMeta } from "../destinations/repository.js";
 import type { RelayManager } from "../relay/relayManager.js";
 import { getRefreshToken } from "../youtube/accountsRepository.js";
 import { createAndStartBroadcast } from "../youtube/youtubeService.js";
-import { nextOccurrenceWindow } from "./occurrence.js";
+import { nextOccurrenceWindow, startOfLocalDay } from "./occurrence.js";
+import { deletePreparedBefore, getPrepared, savePrepared } from "./preparedRepository.js";
 import { listActiveSchedules } from "./repository.js";
 import type { SchedulePublic } from "./types.js";
 
-const LEAD_MINUTES = 10;
 const TICK_MS = 30_000; // twice a minute so we don't miss the exact start/end minute
 
-interface PreparedBroadcast {
-  rtmpUrl: string;
-  broadcastId: string;
-}
+// Preparing can fail (expired YouTube auth, API blip). Retry through the day
+// rather than giving up on the first attempt, but not on every tick.
+const PREPARE_RETRY_MS = 5 * 60_000;
+
+// Prepared rows are only meaningful for their own occurrence; keep a couple of
+// days so a post-mortem can still see what was reserved, then drop them.
+const PREPARED_RETENTION_MS = 2 * 24 * 60 * 60_000;
 
 interface OccurrenceState {
   windowStartIso: string;
-  prepared: boolean;
+  lastPrepareAttempt: number | null;
   started: boolean;
   stopped: boolean;
-  preparedBroadcasts: Map<string, PreparedBroadcast>;
 }
 
 /**
  * Ticks every 30s. For each active schedule's current/next occurrence:
- *  - at lead time, pre-creates any YouTube broadcasts (so the channel
- *    doesn't go live on YouTube's auto-start until the actual push
- *    begins at the real start time — the broadcast is just reserved
- *    early, not fed video yet)
+ *  - from local midnight of the occurrence's day, pre-creates any YouTube
+ *    broadcasts, so the watch link exists well before the service (the
+ *    broadcast is reserved, not fed — YouTube's auto-start only fires once
+ *    the push actually begins)
  *  - at start time, enables all configured destinations
  *  - at end time, disables them (YouTube's own auto-stop then completes
  *    the broadcast once it sees the feed stop)
+ *
+ * Prepared broadcasts are persisted rather than held in memory: the gap
+ * between midnight and the service is long enough that a restart in between
+ * is likely, and losing the reservation would strand a broadcast on the
+ * channel and create a second one at start time.
  */
 export class Scheduler {
   private timer: NodeJS.Timeout | null = null;
@@ -52,6 +59,7 @@ export class Scheduler {
 
   private async tick(): Promise<void> {
     const now = new Date();
+    deletePreparedBefore(new Date(now.getTime() - PREPARED_RETENTION_MS).toISOString());
     for (const schedule of listActiveSchedules()) {
       await this.processSchedule(schedule, now);
     }
@@ -64,26 +72,25 @@ export class Scheduler {
     const windowStartIso = window.start.toISOString();
     let state = this.occurrenceState.get(schedule.id);
     if (!state || state.windowStartIso !== windowStartIso) {
-      state = {
-        windowStartIso,
-        prepared: false,
-        started: false,
-        stopped: false,
-        preparedBroadcasts: new Map(),
-      };
+      state = { windowStartIso, lastPrepareAttempt: null, started: false, stopped: false };
       this.occurrenceState.set(schedule.id, state);
     }
 
-    const leadTime = new Date(window.start.getTime() - LEAD_MINUTES * 60_000);
+    const prepareFrom = startOfLocalDay(window.start);
 
-    if (schedule.autoCreateYoutube && !state.prepared && now >= leadTime && now < window.start) {
-      state.prepared = true;
-      await this.prepareYoutubeBroadcasts(schedule, window.start, state);
+    if (schedule.autoCreateYoutube && now >= prepareFrom && now < window.start) {
+      const due =
+        state.lastPrepareAttempt === null ||
+        now.getTime() - state.lastPrepareAttempt >= PREPARE_RETRY_MS;
+      if (due) {
+        state.lastPrepareAttempt = now.getTime();
+        await this.prepareYoutubeBroadcasts(schedule, window.start, windowStartIso);
+      }
     }
 
     if (!state.started && now >= window.start && now < window.end) {
       state.started = true;
-      await this.startDestinations(schedule, state);
+      await this.startDestinations(schedule, windowStartIso);
     }
 
     if (!state.stopped && now >= window.end) {
@@ -97,9 +104,11 @@ export class Scheduler {
   private async prepareYoutubeBroadcasts(
     schedule: SchedulePublic,
     scheduledStart: Date,
-    state: OccurrenceState,
+    windowStartIso: string,
   ): Promise<void> {
     for (const destinationId of schedule.destinationIds) {
+      if (getPrepared(schedule.id, destinationId, windowStartIso)) continue;
+
       const meta = getDestinationMeta(destinationId);
       if (meta?.platform !== "youtube" || !meta.youtubeAccountId) continue;
       const refreshToken = getRefreshToken(meta.youtubeAccountId);
@@ -108,21 +117,20 @@ export class Scheduler {
         continue;
       }
       try {
-        const { rtmpUrl, broadcastId } = await createAndStartBroadcast(
-          refreshToken,
-          schedule.title,
-          scheduledStart,
+        const prepared = await createAndStartBroadcast(refreshToken, schedule.title, scheduledStart);
+        savePrepared(schedule.id, destinationId, windowStartIso, prepared);
+        console.log(
+          `[scheduler] reserved YouTube broadcast ${prepared.broadcastId} for schedule ${schedule.id} at ${windowStartIso}`,
         );
-        state.preparedBroadcasts.set(destinationId, { rtmpUrl, broadcastId });
       } catch (err) {
         console.error(`[scheduler] failed to pre-create YouTube broadcast for ${destinationId}:`, err);
       }
     }
   }
 
-  private async startDestinations(schedule: SchedulePublic, state: OccurrenceState): Promise<void> {
+  private async startDestinations(schedule: SchedulePublic, windowStartIso: string): Promise<void> {
     for (const destinationId of schedule.destinationIds) {
-      const prepared = state.preparedBroadcasts.get(destinationId);
+      const prepared = getPrepared(schedule.id, destinationId, windowStartIso);
       if (prepared) {
         enableDestinationWithUrl(
           this.relayManager,

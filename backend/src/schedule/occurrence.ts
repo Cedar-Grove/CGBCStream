@@ -39,3 +39,14 @@ export function nextOccurrenceWindow(schedule: SchedulePublic, now: Date): Occur
   }
   return { start, end };
 }
+
+/**
+ * Local midnight starting the day an occurrence falls on. Local rather than
+ * UTC to match the rest of the date math here, which builds occurrence times
+ * from the server's own clock.
+ */
+export function startOfLocalDay(date: Date): Date {
+  const start = new Date(date);
+  start.setHours(0, 0, 0, 0);
+  return start;
+}

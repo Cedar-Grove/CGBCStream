@@ -66,7 +66,31 @@ Click **Enable** to go live to a destination manually, or set up
 **Schedule** entries (weekly recurring or one-off, with a start time,
 duration, which destinations to use, and whether to auto-create a
 YouTube broadcast) so services go live automatically without touching
-the UI. The **Dashboard** shows the incoming feed and live status per
+the UI.
+
+Scheduled YouTube broadcasts are reserved at **local midnight on the day
+of the service**, so the watch link exists hours beforehand and the
+broadcast shows on the channel as upcoming. Reserving it doesn't start
+it — YouTube's auto-start only fires once the relay actually pushes at
+the scheduled time. Reservations are stored (encrypted, since the RTMP
+url embeds the stream key) and keyed by schedule + destination +
+occurrence, so two services on the same day each go to their own
+broadcast, and a restart in between doesn't strand one or create a
+duplicate. If reserving fails — expired YouTube auth, an API blip — it
+retries every 5 minutes through the day, and failing that the broadcast
+is created at start time as before.
+
+Times are the container's local time, and `docker-compose.yml` sets no
+`TZ`, so that is **UTC** unless you set one. If your service times are
+meant to be local, add it to the `app` service:
+
+```yaml
+    environment:
+      - TZ=America/Chicago
+```
+
+This applies to schedule start times generally, not just the midnight
+reservation. The **Dashboard** shows the incoming feed and live status per
 destination, and **History** logs every stream session (manual or
 scheduled) with start/end time and duration.
 
