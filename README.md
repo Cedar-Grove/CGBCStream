@@ -83,17 +83,9 @@ duplicate. If reserving fails — expired YouTube auth, an API blip — it
 retries every 5 minutes through the day, and failing that the broadcast
 is created at start time as before.
 
-Times are the container's local time, and `docker-compose.yml` sets no
-`TZ`, so that is **UTC** unless you set one. If your service times are
-meant to be local, add it to the `app` service:
-
-```yaml
-    environment:
-      - TZ=America/Chicago
-```
-
-This applies to schedule start times generally, not just the midnight
-reservation. The **Dashboard** shows the incoming feed and live status per
+Times are the container's local time. `docker-compose.yml` sets
+`TZ=America/Chicago`; override it by setting `TZ` in `.env`. This applies
+to schedule start times generally, not just the midnight reservation. The **Dashboard** shows the incoming feed and live status per
 destination, and **History** logs every stream session (manual or
 scheduled) with start/end time and duration.
 
@@ -116,7 +108,11 @@ project:
 Broadcasts are created with `enableAutoStart`/`enableAutoStop`, so
 YouTube itself flips the broadcast live once it sees the relay's RTMP
 data, and ends it once the feed stops — no manual "go live" step on
-YouTube's side. They default to `public` visibility.
+YouTube's side. They are titled after the schedule entry, go out
+`public`, and are declared as English audio so YouTube generates English
+automatic captions. When the scheduled window ends the broadcast is set
+to **unlisted**, so it drops out of the channel's listings but stays
+watchable by anyone with the link.
 
 Note: a backend restart mid-service recovers on its own. The scheduler's
 next tick sees it is still inside the occurrence window and resumes

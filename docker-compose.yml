@@ -23,6 +23,10 @@ services:
       - mediamtx
     ports:
       - "3000:3000"
+    environment:
+      # Schedule times are this container's local time, so it must match the
+      # times you enter in the UI. Override with TZ in .env if needed.
+      - TZ=${TZ:-America/Chicago}
     env_file:
       - .env
     volumes:

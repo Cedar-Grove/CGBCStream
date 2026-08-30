@@ -1,7 +1,7 @@
 import { endSession, startSession } from "../history/repository.js";
 import type { RelayManager } from "../relay/relayManager.js";
 import { getRefreshToken } from "../youtube/accountsRepository.js";
-import { createAndStartBroadcast } from "../youtube/youtubeService.js";
+import { createAndStartBroadcast, unlistBroadcast } from "../youtube/youtubeService.js";
 import { getDestinationMeta, getFullRtmpUrl } from "./repository.js";
 
 export interface StartResult {
@@ -14,6 +14,10 @@ export interface StartResult {
 // it out — one relay process per destination, so one open session per
 // destination at a time is always correct.
 const openSessions = new Map<string, string>();
+
+// The YouTube broadcast currently being pushed to, per destination, so it can
+// be unlisted once the occurrence ends.
+const openBroadcasts = new Map<string, string>();
 
 /**
  * Starts relaying to a destination. Only the scheduler calls this — a
@@ -40,6 +44,7 @@ export async function startDestination(
         new Date(),
       );
       relayManager.start(id, rtmpUrl);
+      openBroadcasts.set(id, broadcastId);
       openSessions.set(
         id,
         startSession({
@@ -76,6 +81,7 @@ export function startDestinationWithUrl(
 ): void {
   const meta = getDestinationMeta(id);
   relayManager.start(id, rtmpUrl);
+  if (youtubeBroadcastId) openBroadcasts.set(id, youtubeBroadcastId);
   if (meta) {
     openSessions.set(
       id,
@@ -90,12 +96,37 @@ export function startDestinationWithUrl(
   }
 }
 
-/** Stops the relay and closes its history session. Leaves `enabled` alone — that is configuration, not run state. */
-export function stopDestination(relayManager: RelayManager, id: string): void {
+/**
+ * Stops the relay, closes its history session, and unlists the YouTube
+ * broadcast it was pushing to. Leaves `enabled` alone — that is
+ * configuration, not run state.
+ *
+ * `fallbackBroadcastId` covers a backend restart mid-occurrence, where the
+ * in-memory record is gone but the scheduler still holds the reservation.
+ */
+export async function stopDestination(
+  relayManager: RelayManager,
+  id: string,
+  fallbackBroadcastId?: string | null,
+): Promise<void> {
   relayManager.stop(id);
   const sessionId = openSessions.get(id);
   if (sessionId) {
     endSession(sessionId, "completed");
     openSessions.delete(id);
+  }
+
+  const broadcastId = openBroadcasts.get(id) ?? fallbackBroadcastId;
+  openBroadcasts.delete(id);
+  if (!broadcastId) return;
+
+  const meta = getDestinationMeta(id);
+  if (meta?.platform !== "youtube" || !meta.youtubeAccountId) return;
+  const refreshToken = getRefreshToken(meta.youtubeAccountId);
+  if (!refreshToken) return;
+  try {
+    await unlistBroadcast(refreshToken, broadcastId);
+  } catch (err) {
+    console.error(`[destinations] failed to unlist broadcast ${broadcastId}:`, err);
   }
 }

@@ -33,8 +33,8 @@ interface OccurrenceState {
  *    the push actually begins)
  *  - at start time, starts relaying to every destination on the schedule
  *    that is switched on
- *  - at end time, stops them (YouTube's own auto-stop then completes the
- *    broadcast once it sees the feed stop)
+ *  - at end time, stops them, and unlists the YouTube broadcast (its own
+ *    auto-stop completes it once it sees the feed stop)
  *
  * This is the only thing that starts or stops a relay. A destination's
  * `enabled` flag is configuration -- whether scheduled runs use it -- and
@@ -101,7 +101,8 @@ export class Scheduler {
     if (!state.stopped && now >= window.end) {
       state.stopped = true;
       for (const destinationId of schedule.destinationIds) {
-        stopDestination(this.relayManager, destinationId);
+        const prepared = getPrepared(schedule.id, destinationId, windowStartIso);
+        await stopDestination(this.relayManager, destinationId, prepared?.broadcastId);
       }
     }
   }

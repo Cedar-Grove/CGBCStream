@@ -101,6 +101,15 @@ export async function createAndStartBroadcast(
 
   await yt.liveBroadcasts.bind({ id: broadcastId, part: ["id"], streamId });
 
+  // Declaring the audio language is what gets YouTube to generate English
+  // automatic captions. Best-effort: a channel that can't caption shouldn't
+  // stop the service going live.
+  try {
+    await setEnglishAudioLanguage(yt, broadcastId);
+  } catch (err) {
+    console.error(`[youtube] could not set English audio language on ${broadcastId}:`, err);
+  }
+
   const ingestionInfo = stream.data.cdn?.ingestionInfo;
   if (!ingestionInfo?.ingestionAddress || !ingestionInfo?.streamName) {
     throw new Error("YouTube did not return an RTMP ingestion address");
@@ -110,4 +119,55 @@ export async function createAndStartBroadcast(
     broadcastId,
     rtmpUrl: `${ingestionInfo.ingestionAddress.replace(/\/+$/, "")}/${ingestionInfo.streamName}`,
   };
+}
+
+/**
+ * videos.update replaces the parts it is given, so the existing snippet is
+ * read back first and only the language fields changed — otherwise the title
+ * and category would be cleared.
+ */
+async function setEnglishAudioLanguage(
+  yt: ReturnType<typeof google.youtube>,
+  videoId: string,
+): Promise<void> {
+  const existing = await yt.videos.list({ part: ["snippet"], id: [videoId] });
+  const snippet = existing.data.items?.[0]?.snippet;
+  if (!snippet) return;
+
+  await yt.videos.update({
+    part: ["snippet"],
+    requestBody: {
+      id: videoId,
+      snippet: {
+        title: snippet.title,
+        categoryId: snippet.categoryId,
+        description: snippet.description,
+        tags: snippet.tags,
+        defaultLanguage: "en",
+        defaultAudioLanguage: "en",
+      },
+    },
+  });
+}
+
+/**
+ * Drops a finished broadcast out of the channel's public listings. It stays
+ * watchable by link. Reads the current status first so updating privacy does
+ * not clear the made-for-kids declaration alongside it.
+ */
+export async function unlistBroadcast(refreshToken: string, broadcastId: string): Promise<void> {
+  const yt = google.youtube({ version: "v3", auth: clientForRefreshToken(refreshToken) });
+  const existing = await yt.liveBroadcasts.list({ part: ["status"], id: [broadcastId] });
+  const status = existing.data.items?.[0]?.status;
+
+  await yt.liveBroadcasts.update({
+    part: ["status"],
+    requestBody: {
+      id: broadcastId,
+      status: {
+        privacyStatus: "unlisted",
+        selfDeclaredMadeForKids: status?.selfDeclaredMadeForKids ?? false,
+      },
+    },
+  });
 }

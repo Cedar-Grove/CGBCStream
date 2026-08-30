@@ -47,7 +47,7 @@ export function registerDestinationRoutes(app: FastifyInstance, relayManager: Re
 
   app.delete("/api/destinations/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
-    stopDestination(relayManager, id);
+    await stopDestination(relayManager, id);
     const ok = deleteDestination(id);
     if (!ok) return reply.code(404).send({ error: "not found" });
     return reply.code(204).send();
