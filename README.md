@@ -128,6 +128,28 @@ next tick sees it is still inside the occurrence window and resumes
 relaying, reusing the broadcast reserved at midnight rather than creating
 another.
 
+## Checking it will actually stream
+
+Before a service, or any time something looks off:
+
+```sh
+docker compose exec app node dist/scripts/verifySetup.js
+```
+
+It reports the timezone schedule times are read in, whether the required
+env vars are set, every connected channel — exchanging each stored
+refresh token with Google, which is the only real proof the
+authorisation still works — every destination and whether it is ticked
+**in schedule**, and for each active schedule the next occurrence in
+local time, when its YouTube broadcast will be reserved, and which
+destinations will actually be streamed to.
+
+It fails loudly on the mistakes that otherwise fail silently on a Sunday
+morning: a revoked authorisation, a schedule pointing at a destination
+that was deleted or is not ticked, a YouTube destination with no channel
+linked, a static destination with no stream key. Exit code is 1 on any
+failure, so it can be wired to a cron job or alert.
+
 ## Testing without the Web Presenter
 
 Simulate the encoder with ffmpeg's test source, pointed at the same
