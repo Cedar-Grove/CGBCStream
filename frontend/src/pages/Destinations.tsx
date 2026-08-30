@@ -95,7 +95,9 @@ export default function Destinations() {
     await refresh();
   }
 
-  async function handleToggle(destination: Destination) {
+  // Purely configuration: whether scheduled streams use this destination.
+  // Nothing goes live here — the scheduler starts and stops relays.
+  async function handleToggleScheduled(destination: Destination) {
     try {
       if (destination.enabled) {
         await api.disableDestination(destination.id);
@@ -120,6 +122,11 @@ export default function Destinations() {
         </div>
       </div>
 
+      <p className="hint">
+        “In schedule” marks a destination for use by scheduled streams. Streaming starts and stops on
+        the schedule — there is nothing to switch on here.
+      </p>
+
       {justConnectedYoutube && <p className="success">YouTube channel connected.</p>}
       {error && <p className="error">{error}</p>}
 
@@ -129,6 +136,7 @@ export default function Destinations() {
             <th>Name</th>
             <th>Platform</th>
             <th>Stream key</th>
+            <th>In schedule</th>
             <th>Status</th>
             <th>Actions</th>
           </tr>
@@ -148,10 +156,19 @@ export default function Destinations() {
                 )}
               </td>
               <td>
-                <StatusBadge enabled={d.enabled} status={statuses[d.id]} />
+                <label className="schedule-toggle">
+                  <input
+                    type="checkbox"
+                    checked={d.enabled}
+                    onChange={() => handleToggleScheduled(d)}
+                  />
+                  <span>{d.enabled ? "Yes" : "No"}</span>
+                </label>
+              </td>
+              <td>
+                <StatusBadge status={statuses[d.id]} />
               </td>
               <td className="actions">
-                <button onClick={() => handleToggle(d)}>{d.enabled ? "Disable" : "Enable"}</button>
                 {d.platform !== "youtube" && <button onClick={() => startEdit(d)}>Edit</button>}
                 <button onClick={() => handleDelete(d.id)}>Delete</button>
               </td>
@@ -159,7 +176,7 @@ export default function Destinations() {
           ))}
           {destinations.length === 0 && (
             <tr>
-              <td colSpan={5}>No destinations yet — connect YouTube or add Subsplash to get started.</td>
+              <td colSpan={6}>No destinations yet — connect YouTube or add Subsplash to get started.</td>
             </tr>
           )}
         </tbody>

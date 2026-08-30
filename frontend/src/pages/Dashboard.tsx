@@ -46,7 +46,7 @@ export default function Dashboard() {
             <div className="status-card" key={d.id}>
               <h3>{d.name}</h3>
               <p className="muted">{d.platform}</p>
-              <StatusBadge enabled={d.enabled} status={status} />
+              <StatusBadge status={status} />
               {status?.status === "running" && status.bitrateKbps != null && (
                 <p className="muted">{status.bitrateKbps.toFixed(0)} kbps</p>
               )}

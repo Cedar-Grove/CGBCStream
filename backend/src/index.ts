@@ -74,7 +74,6 @@ if (existsSync(publicDir)) {
   });
 }
 
-relayManager.reconcile();
 
 const scheduler = new Scheduler(relayManager);
 scheduler.start();

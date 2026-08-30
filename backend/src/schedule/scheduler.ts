@@ -1,4 +1,4 @@
-import { disableDestination, enableDestinationWithUrl, enableDestination } from "../destinations/service.js";
+import { startDestination, startDestinationWithUrl, stopDestination } from "../destinations/service.js";
 import { getDestinationMeta } from "../destinations/repository.js";
 import type { RelayManager } from "../relay/relayManager.js";
 import { getRefreshToken } from "../youtube/accountsRepository.js";
@@ -31,9 +31,14 @@ interface OccurrenceState {
  *    broadcasts, so the watch link exists well before the service (the
  *    broadcast is reserved, not fed — YouTube's auto-start only fires once
  *    the push actually begins)
- *  - at start time, enables all configured destinations
- *  - at end time, disables them (YouTube's own auto-stop then completes
- *    the broadcast once it sees the feed stop)
+ *  - at start time, starts relaying to every destination on the schedule
+ *    that is switched on
+ *  - at end time, stops them (YouTube's own auto-stop then completes the
+ *    broadcast once it sees the feed stop)
+ *
+ * This is the only thing that starts or stops a relay. A destination's
+ * `enabled` flag is configuration -- whether scheduled runs use it -- and
+ * toggling it in the UI has no immediate effect.
  *
  * Prepared broadcasts are persisted rather than held in memory: the gap
  * between midnight and the service is long enough that a restart in between
@@ -96,7 +101,7 @@ export class Scheduler {
     if (!state.stopped && now >= window.end) {
       state.stopped = true;
       for (const destinationId of schedule.destinationIds) {
-        disableDestination(this.relayManager, destinationId);
+        stopDestination(this.relayManager, destinationId);
       }
     }
   }
@@ -110,7 +115,8 @@ export class Scheduler {
       if (getPrepared(schedule.id, destinationId, windowStartIso)) continue;
 
       const meta = getDestinationMeta(destinationId);
-      if (meta?.platform !== "youtube" || !meta.youtubeAccountId) continue;
+      if (!meta?.enabled) continue;
+      if (meta.platform !== "youtube" || !meta.youtubeAccountId) continue;
       const refreshToken = getRefreshToken(meta.youtubeAccountId);
       if (!refreshToken) {
         console.error(`[scheduler] YouTube account for destination ${destinationId} no longer exists`);
@@ -130,9 +136,13 @@ export class Scheduler {
 
   private async startDestinations(schedule: SchedulePublic, windowStartIso: string): Promise<void> {
     for (const destinationId of schedule.destinationIds) {
+      // `enabled` is the destination's opt-in to scheduled streaming; a
+      // destination listed on the schedule but switched off is skipped.
+      if (!getDestinationMeta(destinationId)?.enabled) continue;
+
       const prepared = getPrepared(schedule.id, destinationId, windowStartIso);
       if (prepared) {
-        enableDestinationWithUrl(
+        startDestinationWithUrl(
           this.relayManager,
           destinationId,
           prepared.rtmpUrl,
@@ -141,9 +151,9 @@ export class Scheduler {
         );
         continue;
       }
-      const result = await enableDestination(this.relayManager, destinationId, schedule.title, schedule.id);
+      const result = await startDestination(this.relayManager, destinationId, schedule.title, schedule.id);
       if (!result.ok) {
-        console.error(`[scheduler] failed to enable destination ${destinationId}: ${result.error}`);
+        console.error(`[scheduler] failed to start destination ${destinationId}: ${result.error}`);
       }
     }
   }

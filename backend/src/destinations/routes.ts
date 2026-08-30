@@ -1,7 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import type { RelayManager } from "../relay/relayManager.js";
-import { disableDestination, enableDestination } from "./service.js";
-import { createDestination, deleteDestination, listDestinations, updateDestination } from "./repository.js";
+import { stopDestination } from "./service.js";
+import {
+  createDestination,
+  deleteDestination,
+  listDestinations,
+  setEnabled,
+  updateDestination,
+} from "./repository.js";
 import { PLATFORMS, type DestinationInput } from "./types.js";
 
 function isValidPlatform(value: unknown): value is DestinationInput["platform"] {
@@ -41,25 +47,26 @@ export function registerDestinationRoutes(app: FastifyInstance, relayManager: Re
 
   app.delete("/api/destinations/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
-    relayManager.stop(id);
+    stopDestination(relayManager, id);
     const ok = deleteDestination(id);
     if (!ok) return reply.code(404).send({ error: "not found" });
     return reply.code(204).send();
   });
 
+  // `enabled` marks a destination for use by scheduled streams. Toggling it
+  // never starts or stops a relay -- only the scheduler does that, at the
+  // occurrence's start and end.
   app.post("/api/destinations/:id/enable", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const result = await enableDestination(relayManager, id);
-    if (!result.ok) {
-      return reply.code(result.status ?? 400).send({ error: result.error });
-    }
-    return result;
+    const updated = setEnabled(id, true);
+    if (!updated) return reply.code(404).send({ error: "not found" });
+    return updated;
   });
 
   app.post("/api/destinations/:id/disable", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const ok = disableDestination(relayManager, id);
-    if (!ok) return reply.code(404).send({ error: "not found" });
-    return { ok: true };
+    const updated = setEnabled(id, false);
+    if (!updated) return reply.code(404).send({ error: "not found" });
+    return updated;
   });
 }

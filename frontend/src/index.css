@@ -253,3 +253,17 @@ table.destinations-table td {
 .error {
   color: #b91c1c;
 }
+
+/* "In schedule" is a configuration checkbox, not a go-live control. */
+.schedule-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+
+.hint {
+  margin: 0 0 1rem;
+  opacity: 0.75;
+  font-size: 0.9rem;
+}

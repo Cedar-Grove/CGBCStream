@@ -62,11 +62,14 @@ Then go to **Destinations**:
 - **YouTube**: "Connect YouTube channel" (see setup below) — no manual
   RTMP details needed, a fresh key is created per broadcast.
 
-Click **Enable** to go live to a destination manually, or set up
-**Schedule** entries (weekly recurring or one-off, with a start time,
-duration, which destinations to use, and whether to auto-create a
-YouTube broadcast) so services go live automatically without touching
-the UI.
+Tick **In schedule** on the destinations you want scheduled streams to
+use. That is configuration only — it never starts or stops anything. All
+streaming is driven by **Schedule** entries (weekly recurring or one-off,
+with a start time, duration, which destinations to use, and whether to
+auto-create a YouTube broadcast); the scheduler is the only thing that
+starts a relay, at the occurrence's start, and stops it at the end.
+There is no ad-hoc "go live now" — an unscheduled service means adding a
+one-off schedule entry for it.
 
 Scheduled YouTube broadcasts are reserved at **local midnight on the day
 of the service**, so the watch link exists hours beforehand and the
@@ -115,10 +118,10 @@ YouTube itself flips the broadcast live once it sees the relay's RTMP
 data, and ends it once the feed stops — no manual "go live" step on
 YouTube's side. They default to `public` visibility.
 
-Note: a backend restart clears any YouTube destination's "enabled"
-state, since its RTMP key was tied to a broadcast that no longer
-exists — you'll need to click Enable again after a restart. Static
-destinations (Subsplash/Facebook) restart automatically.
+Note: a backend restart mid-service recovers on its own. The scheduler's
+next tick sees it is still inside the occurrence window and resumes
+relaying, reusing the broadcast reserved at midnight rather than creating
+another.
 
 ## Testing without the Web Presenter
 
@@ -132,9 +135,10 @@ ffmpeg -re -f lavfi -i "testsrc=size=1280x720:rate=30" \
   -f flv rtmp://localhost:1935/live
 ```
 
-Then add/connect a destination in the UI and click Enable — you
-should see the test pattern appear at the destination within a few
-seconds, and in the Dashboard's preview player.
+Then add/connect a destination, tick **In schedule** on it, and add a
+one-off Schedule entry starting a minute or two out — you should see the
+test pattern appear at the destination shortly after the start time, and
+in the Dashboard's preview player.
 
 ## Backend dev (without Docker)
 

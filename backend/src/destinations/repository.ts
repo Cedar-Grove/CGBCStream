@@ -38,13 +38,18 @@ function getRow(id: string): Row | undefined {
   return db.prepare("SELECT * FROM destinations WHERE id = ?").get(id) as Row | undefined;
 }
 
-/** Just enough to decide how to enable a destination, without exposing secrets. */
+/** Just enough to decide how to start a destination, without exposing secrets. */
 export function getDestinationMeta(
   id: string,
-): { platform: Platform; youtubeAccountId: string | null; name: string } | undefined {
+): { platform: Platform; youtubeAccountId: string | null; name: string; enabled: boolean } | undefined {
   const row = getRow(id);
   if (!row) return undefined;
-  return { platform: row.platform, youtubeAccountId: row.youtube_account_id, name: row.name };
+  return {
+    platform: row.platform,
+    youtubeAccountId: row.youtube_account_id,
+    name: row.name,
+    enabled: !!row.enabled,
+  };
 }
 
 /** The full `rtmp://server/streamKey` ffmpeg push target for a static-platform destination, decrypted for use — never exposed via the API. */
@@ -101,20 +106,4 @@ export function setEnabled(id: string, enabled: boolean): DestinationPublic | un
 
 export function deleteDestination(id: string): boolean {
   return db.prepare("DELETE FROM destinations WHERE id = ?").run(id).changes > 0;
-}
-
-/** Static-platform (subsplash/facebook) destinations only — used to restart relays on boot. YouTube destinations need a fresh broadcast, so they're excluded (see reconcile logic). */
-export function listEnabledStaticDestinations(): { id: string; rtmpUrl: string }[] {
-  const rows = db
-    .prepare("SELECT * FROM destinations WHERE enabled = 1 AND platform != 'youtube'")
-    .all() as Row[];
-  return rows.map((row) => ({
-    id: row.id,
-    rtmpUrl: `${row.server_url.replace(/\/+$/, "")}/${decryptSecret(row.stream_key)}`,
-  }));
-}
-
-/** YouTube's dynamic key doesn't survive a restart — clear any stale "enabled" flag so the UI doesn't lie about being live. */
-export function resetYoutubeEnabledState(): void {
-  db.prepare("UPDATE destinations SET enabled = 0 WHERE platform = 'youtube' AND enabled = 1").run();
 }
