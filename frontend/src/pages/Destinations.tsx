@@ -89,8 +89,13 @@ export default function Destinations() {
     }
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm("Delete this destination?")) return;
+  async function handleDelete(destination: Destination) {
+    const message =
+      destination.platform === "youtube"
+        ? `Delete “${destination.name}” and disconnect its YouTube channel?`
+        : `Delete “${destination.name}”?`;
+    if (!confirm(message)) return;
+    const id = destination.id;
     await api.deleteDestination(id);
     await refresh();
   }
@@ -135,7 +140,7 @@ export default function Destinations() {
           <tr>
             <th>Name</th>
             <th>Platform</th>
-            <th>Stream key</th>
+            <th>Stream key / channel</th>
             <th>In schedule</th>
             <th>Status</th>
             <th>Actions</th>
@@ -148,7 +153,12 @@ export default function Destinations() {
               <td>{d.platform}</td>
               <td>
                 {d.platform === "youtube" ? (
-                  <em>connected account</em>
+                  <span className="linked-channel">
+                    {d.youtubeChannelTitle ?? <em>no channel linked</em>}
+                    {d.youtubeLinkedAt && (
+                      <small>linked {new Date(d.youtubeLinkedAt).toLocaleString()}</small>
+                    )}
+                  </span>
                 ) : d.hasStreamKey ? (
                   d.streamKeyPreview
                 ) : (
@@ -170,7 +180,7 @@ export default function Destinations() {
               </td>
               <td className="actions">
                 {d.platform !== "youtube" && <button onClick={() => startEdit(d)}>Edit</button>}
-                <button onClick={() => handleDelete(d.id)}>Delete</button>
+                <button onClick={() => handleDelete(d)}>Delete</button>
               </td>
             </tr>
           ))}

@@ -267,3 +267,13 @@ table.destinations-table td {
   opacity: 0.75;
   font-size: 0.9rem;
 }
+
+/* Which channel a YouTube destination pushes to, and when it was linked. */
+.linked-channel {
+  display: flex;
+  flex-direction: column;
+}
+
+.linked-channel small {
+  opacity: 0.65;
+}

@@ -29,7 +29,7 @@ export function getAuthUrl(): string {
 
 export async function handleOAuthCallback(
   code: string,
-): Promise<{ channelTitle: string; refreshToken: string }> {
+): Promise<{ channelId: string; channelTitle: string; refreshToken: string }> {
   const client = getOAuthClient();
   const { tokens } = await client.getToken(code);
   if (!tokens.refresh_token) {
@@ -42,9 +42,18 @@ export async function handleOAuthCallback(
 
   const yt = google.youtube({ version: "v3", auth: client });
   const channels = await yt.channels.list({ part: ["snippet"], mine: true });
-  const channelTitle = channels.data.items?.[0]?.snippet?.title ?? "YouTube channel";
+  const channel = channels.data.items?.[0];
+  if (!channel?.id) {
+    throw new Error(
+      "That Google account does not manage a YouTube channel — pick the channel's account and try again",
+    );
+  }
 
-  return { channelTitle, refreshToken: tokens.refresh_token };
+  return {
+    channelId: channel.id,
+    channelTitle: channel.snippet?.title ?? "YouTube channel",
+    refreshToken: tokens.refresh_token,
+  };
 }
 
 function clientForRefreshToken(refreshToken: string): OAuth2Client {

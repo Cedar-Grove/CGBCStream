@@ -79,3 +79,12 @@ function ensureColumn(table: string, column: string, ddl: string): void {
 // YouTube destinations link to a connected account instead of a static
 // server URL/key (YouTube issues a fresh RTMP key per broadcast).
 ensureColumn("destinations", "youtube_account_id", "youtube_account_id TEXT");
+
+// Identifies which YouTube channel an account is for, so reconnecting the same
+// channel updates it in place instead of piling up duplicate accounts. Older
+// rows predate this and stay null; the index skips them.
+ensureColumn("youtube_accounts", "channel_id", "channel_id TEXT");
+db.exec(`
+  CREATE UNIQUE INDEX IF NOT EXISTS youtube_accounts_channel_id
+    ON youtube_accounts (channel_id) WHERE channel_id IS NOT NULL;
+`);

@@ -4,10 +4,12 @@ import { stopDestination } from "./service.js";
 import {
   createDestination,
   deleteDestination,
+  getYoutubeAccountId,
   listDestinations,
   setEnabled,
   updateDestination,
 } from "./repository.js";
+import { deleteAccount } from "../youtube/accountsRepository.js";
 import { PLATFORMS, type DestinationInput } from "./types.js";
 
 function isValidPlatform(value: unknown): value is DestinationInput["platform"] {
@@ -48,8 +50,12 @@ export function registerDestinationRoutes(app: FastifyInstance, relayManager: Re
   app.delete("/api/destinations/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
     await stopDestination(relayManager, id);
+    // Removing a YouTube destination disconnects the channel with it —
+    // otherwise its stored refresh token lingers with nothing referencing it.
+    const accountId = getYoutubeAccountId(id);
     const ok = deleteDestination(id);
     if (!ok) return reply.code(404).send({ error: "not found" });
+    if (accountId) deleteAccount(accountId);
     return reply.code(204).send();
   });
 

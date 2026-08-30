@@ -8,6 +8,8 @@ export interface Destination {
   hasStreamKey: boolean;
   streamKeyPreview: string;
   youtubeAccountId: string | null;
+  youtubeChannelTitle: string | null;
+  youtubeLinkedAt: string | null;
   enabled: boolean;
   createdAt: string;
 }

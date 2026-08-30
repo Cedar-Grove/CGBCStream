@@ -1,6 +1,10 @@
 import type { FastifyInstance } from "fastify";
-import { createDestination } from "../destinations/repository.js";
-import { createAccount, listAccounts } from "./accountsRepository.js";
+import {
+  createDestination,
+  findDestinationByAccount,
+  renameDestination,
+} from "../destinations/repository.js";
+import { listAccounts, upsertAccount } from "./accountsRepository.js";
 import { getAuthUrl, handleOAuthCallback } from "./youtubeService.js";
 
 export function registerYoutubeRoutes(app: FastifyInstance): void {
@@ -19,13 +23,18 @@ export function registerYoutubeRoutes(app: FastifyInstance): void {
     if (!code) return reply.code(400).send({ error: "missing code" });
 
     try {
-      const { channelTitle, refreshToken } = await handleOAuthCallback(code);
-      const account = createAccount(channelTitle, refreshToken);
-      createDestination({
-        name: channelTitle,
-        platform: "youtube",
-        youtubeAccountId: account.id,
-      });
+      const { channelId, channelTitle, refreshToken } = await handleOAuthCallback(code);
+      const { account } = upsertAccount(channelId, channelTitle, refreshToken);
+
+      // Reconnecting an already-linked channel refreshes its credentials in
+      // place; it must not add a second destination alongside the one the
+      // schedules already point at.
+      const existing = findDestinationByAccount(account.id);
+      if (existing) {
+        if (existing.name !== channelTitle) renameDestination(existing.id, channelTitle);
+      } else {
+        createDestination({ name: channelTitle, platform: "youtube", youtubeAccountId: account.id });
+      }
       return reply.redirect("/destinations?connected=youtube");
     } catch (err) {
       app.log.error(err);

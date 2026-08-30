@@ -103,7 +103,16 @@ project:
    `YOUTUBE_REDIRECT_URI` (matching the URI above exactly).
 5. Restart (`docker compose up -d --build`), then click **Connect
    YouTube channel** in the UI and sign in with the channel's Google
-   account.
+   account. At Google's account chooser, pick the account that owns the
+   channel — if it manages several, the one you pick is the channel that
+   gets streamed to.
+
+Channels are keyed by their YouTube channel id, so reconnecting one that
+is already linked refreshes its credentials in place rather than adding a
+second copy. The destinations list shows which channel each YouTube
+destination pushes to and when it was linked. Deleting a YouTube
+destination disconnects its channel, so no stored refresh token is left
+behind with nothing referencing it.
 
 Broadcasts are created with `enableAutoStart`/`enableAutoStop`, so
 YouTube itself flips the broadcast live once it sees the relay's RTMP

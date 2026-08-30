@@ -23,6 +23,10 @@ export interface DestinationPublic {
   hasStreamKey: boolean;
   streamKeyPreview: string;
   youtubeAccountId: string | null;
+  // Which connected channel a YouTube destination pushes to, and when it was
+  // linked — the only way to tell two same-named channels apart in the UI.
+  youtubeChannelTitle: string | null;
+  youtubeLinkedAt: string | null;
   enabled: boolean;
   createdAt: string;
 }
