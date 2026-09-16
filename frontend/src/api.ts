@@ -26,6 +26,14 @@ export interface DestinationDraft {
   unlistAfter?: boolean;
 }
 
+/** Encoder-facing details of a YouTube destination's persistent stream. */
+export interface StreamIngestDetails {
+  title: string;
+  streamKey: string;
+  primaryServerUrl: string;
+  backupServerUrl: string | null;
+}
+
 export type RelayStatus = "stopped" | "waiting" | "starting" | "running" | "error";
 
 export interface RelayState {
@@ -115,6 +123,8 @@ export const api = {
   updateDestination: (id: string, input: Partial<DestinationDraft>) =>
     request<Destination>(`/destinations/${id}`, { method: "PUT", body: JSON.stringify(input) }),
   deleteDestination: (id: string) => request<void>(`/destinations/${id}`, { method: "DELETE" }),
+  destinationStreamKey: (id: string) =>
+    request<StreamIngestDetails>(`/destinations/${id}/stream-key`),
   enableDestination: (id: string) =>
     request<{ ok: true }>(`/destinations/${id}/enable`, { method: "POST" }),
   disableDestination: (id: string) =>

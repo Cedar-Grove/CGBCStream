@@ -135,6 +135,9 @@ export async function reserveBroadcast(
   return { broadcastId, englishCaptionsSet };
 }
 
+/** What the persistent stream is called on the channel, so it is recognisable in YouTube Studio's stream-key list. */
+export const REUSABLE_STREAM_TITLE = "cgbc static key";
+
 /**
  * Returns the destination's persistent stream key, creating the stream
  * resource the first time.
@@ -146,15 +149,30 @@ export async function reserveBroadcast(
  */
 export async function ensureReusableStream(
   refreshToken: string,
-  title: string,
   existingStreamId?: string | null,
 ): Promise<{ streamId: string; rtmpUrl: string }> {
   const yt = google.youtube({ version: "v3", auth: clientForRefreshToken(refreshToken) });
 
   if (existingStreamId) {
-    const found = await yt.liveStreams.list({ part: ["cdn", "status"], id: [existingStreamId] });
+    const found = await yt.liveStreams.list({ part: ["snippet", "cdn", "status"], id: [existingStreamId] });
     const existing = found.data.items?.[0];
     if (existing?.id) {
+      if (existing.snippet?.title !== REUSABLE_STREAM_TITLE) {
+        // Streams created before this was named — best-effort, since a
+        // rename failing is no reason to keep a service off air.
+        try {
+          await yt.liveStreams.update({
+            part: ["id", "snippet", "cdn"],
+            requestBody: {
+              id: existing.id,
+              snippet: { title: REUSABLE_STREAM_TITLE },
+              cdn: existing.cdn ?? undefined,
+            },
+          });
+        } catch (err) {
+          console.error(`[youtube] could not rename stream ${existing.id}:`, err);
+        }
+      }
       return { streamId: existing.id, rtmpUrl: rtmpUrlFor(existing.cdn?.ingestionInfo, existing.id) };
     }
     console.warn(
@@ -165,7 +183,7 @@ export async function ensureReusableStream(
   const created = await yt.liveStreams.insert({
     part: ["snippet", "cdn", "contentDetails"],
     requestBody: {
-      snippet: { title },
+      snippet: { title: REUSABLE_STREAM_TITLE },
       cdn: { frameRate: "variable", ingestionType: "rtmp", resolution: "variable" },
       contentDetails: { isReusable: true },
     },
@@ -173,6 +191,43 @@ export async function ensureReusableStream(
   const streamId = created.data.id;
   if (!streamId) throw new Error("YouTube did not return a stream id");
   return { streamId, rtmpUrl: rtmpUrlFor(created.data.cdn?.ingestionInfo, streamId) };
+}
+
+export interface StreamIngestDetails {
+  title: string;
+  streamKey: string;
+  primaryServerUrl: string;
+  /**
+   * For the operator's own redundant encoder, and nothing else. This is the
+   * only place the backup address is read: it is shown, never pushed to.
+   */
+  backupServerUrl: string | null;
+}
+
+/**
+ * The encoder-facing details of a persistent stream — what to type into an
+ * encoder, rather than what this app pushes to.
+ */
+export async function getStreamIngestDetails(
+  refreshToken: string,
+  streamId: string,
+): Promise<StreamIngestDetails> {
+  const yt = google.youtube({ version: "v3", auth: clientForRefreshToken(refreshToken) });
+  const found = await yt.liveStreams.list({ part: ["snippet", "cdn"], id: [streamId] });
+  const stream = found.data.items?.[0];
+  if (!stream) {
+    throw new Error(`stream ${streamId} no longer exists on the channel — it is recreated on the next service`);
+  }
+  const ingestionInfo = stream.cdn?.ingestionInfo;
+  if (!ingestionInfo?.ingestionAddress || !ingestionInfo?.streamName) {
+    throw new Error(`YouTube did not return ingestion details for stream ${streamId}`);
+  }
+  return {
+    title: stream.snippet?.title ?? REUSABLE_STREAM_TITLE,
+    streamKey: ingestionInfo.streamName,
+    primaryServerUrl: ingestionInfo.ingestionAddress.replace(/\/+$/, ""),
+    backupServerUrl: ingestionInfo.backupIngestionAddress?.replace(/\/+$/, "") ?? null,
+  };
 }
 
 /** Points a reserved broadcast at the destination's persistent stream. Called at start time, not at reservation time. */
@@ -198,7 +253,7 @@ export async function createAndStartBroadcast(
     scheduledStartTime,
     options,
   );
-  const { streamId, rtmpUrl } = await ensureReusableStream(refreshToken, title, options.reuseStreamId);
+  const { streamId, rtmpUrl } = await ensureReusableStream(refreshToken, options.reuseStreamId);
   await bindBroadcastToStream(refreshToken, broadcastId, streamId);
   return { broadcastId, rtmpUrl, streamId, englishCaptionsSet };
 }
@@ -207,9 +262,11 @@ export async function createAndStartBroadcast(
  * Builds the push URL from a stream's ingestion info.
  *
  * `ingestionAddress` is YouTube's PRIMARY ingest. The response also carries
- * `backupIngestionAddress` for the same key — that one is reserved for a
- * second, redundant encoder and is never read here, because two encoders on
- * the backup slot is an error YouTube fails the whole broadcast over.
+ * `backupIngestionAddress` for the same key — that one belongs to the
+ * operator's own redundant encoder, because two encoders on the backup slot
+ * is an error YouTube fails the whole broadcast over. Nothing this app
+ * pushes to ever comes from it; it is only ever displayed, by
+ * getStreamIngestDetails.
  */
 function rtmpUrlFor(
   ingestionInfo: { ingestionAddress?: string | null; streamName?: string | null } | undefined | null,

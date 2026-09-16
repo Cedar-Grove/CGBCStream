@@ -141,11 +141,7 @@ export class Scheduler {
         const { broadcastId } = await reserveBroadcast(refreshToken, schedule.title, scheduledStart, {
           englishCaptions: meta.englishCaptions,
         });
-        const { streamId, rtmpUrl } = await ensureReusableStream(
-          refreshToken,
-          meta.name,
-          meta.youtubeStreamId,
-        );
+        const { streamId, rtmpUrl } = await ensureReusableStream(refreshToken, meta.youtubeStreamId);
         if (streamId !== meta.youtubeStreamId) setYoutubeStreamId(destinationId, streamId);
         savePrepared(schedule.id, destinationId, windowStartIso, { broadcastId, rtmpUrl });
         console.log(

@@ -6,6 +6,7 @@ import {
   type DestinationDraft,
   type Platform,
   type RelayState,
+  type StreamIngestDetails,
 } from "../api";
 import StatusBadge from "../components/StatusBadge";
 
@@ -31,6 +32,9 @@ export default function Destinations() {
   const [draft, setDraft] = useState<DestinationDraft>(emptyDraft);
   const [formOpen, setFormOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The persistent key is only fetched when someone asks to see it — it is
+  // never part of the destinations list.
+  const [streamKey, setStreamKey] = useState<{ id: string; details: StreamIngestDetails } | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
 
   const justConnectedYoutube = searchParams.get("connected") === "youtube";
@@ -130,6 +134,20 @@ export default function Destinations() {
     await refresh();
   }
 
+  async function handleShowStreamKey(destination: Destination) {
+    if (streamKey?.id === destination.id) {
+      setStreamKey(null);
+      return;
+    }
+    setError(null);
+    try {
+      setStreamKey({ id: destination.id, details: await api.destinationStreamKey(destination.id) });
+    } catch (err) {
+      setStreamKey(null);
+      setError((err as Error).message);
+    }
+  }
+
   return (
     <div>
       <div className="page-header">
@@ -175,6 +193,11 @@ export default function Destinations() {
                     {d.youtubeChannelTitle ?? <em>no channel linked</em>}
                     {d.youtubeLinkedAt && (
                       <small>linked {new Date(d.youtubeLinkedAt).toLocaleString()}</small>
+                    )}
+                    {d.hasReusableStreamKey && (
+                      <button className="link-button" onClick={() => handleShowStreamKey(d)}>
+                        {streamKey?.id === d.id ? "Hide stream key" : "Show stream key"}
+                      </button>
                     )}
                   </span>
                 ) : d.hasStreamKey ? (
@@ -237,6 +260,36 @@ export default function Destinations() {
           )}
         </tbody>
       </table>
+
+      {streamKey && (
+        <div className="stream-key-panel">
+          <h3>“{streamKey.details.title}” — encoder settings</h3>
+          <p className="hint">
+            One key, two servers. CGBCStream pushes to the primary; the backup server is there for a
+            second, redundant encoder of your own. Never point two encoders at the same server — that
+            is what YouTube rejects the broadcast over.
+          </p>
+          <dl>
+            <dt>Stream key</dt>
+            <dd>
+              <code>{streamKey.details.streamKey}</code>
+            </dd>
+            <dt>Primary server — used by CGBCStream</dt>
+            <dd>
+              <code>{streamKey.details.primaryServerUrl}</code>
+            </dd>
+            <dt>Backup server — for your redundant encoder</dt>
+            <dd>
+              {streamKey.details.backupServerUrl ? (
+                <code>{streamKey.details.backupServerUrl}</code>
+              ) : (
+                <em>YouTube did not return one</em>
+              )}
+            </dd>
+          </dl>
+          <button onClick={() => setStreamKey(null)}>Hide</button>
+        </div>
+      )}
 
       {formOpen && (
         <form className="destination-form" onSubmit={handleSubmit}>

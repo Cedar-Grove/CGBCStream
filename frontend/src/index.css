@@ -277,3 +277,55 @@ table.destinations-table td {
 .linked-channel small {
   opacity: 0.65;
 }
+
+/* Revealed on request: the persistent stream key and the two servers it
+   works with — the primary this app pushes to, and the backup that exists
+   for a separate redundant encoder. */
+.stream-key-panel {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: white;
+  border-radius: 8px;
+  max-width: 560px;
+}
+
+.stream-key-panel h3 {
+  margin: 0 0 0.5rem;
+}
+
+.stream-key-panel dl {
+  margin: 0 0 1rem;
+}
+
+.stream-key-panel dt {
+  font-size: 0.85rem;
+  opacity: 0.75;
+  margin-top: 0.75rem;
+}
+
+.stream-key-panel dd {
+  margin: 0.2rem 0 0;
+}
+
+.stream-key-panel code {
+  display: inline-block;
+  padding: 0.3rem 0.5rem;
+  background: #f3f4f6;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  word-break: break-all;
+  user-select: all;
+}
+
+/* A button that reads as a link, for an action inside a table cell. */
+.link-button {
+  align-self: flex-start;
+  margin-top: 0.25rem;
+  padding: 0;
+  background: none;
+  border: none;
+  color: #1d4ed8;
+  font-size: 0.85rem;
+  text-decoration: underline;
+  cursor: pointer;
+}

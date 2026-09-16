@@ -64,6 +64,15 @@ Then go to **Destinations**:
   created on the first service and reused after that, so the stream key
   and RTMP address are static from then on.
 
+The stream is called **“cgbc static key”** on the channel, so it is
+recognisable in YouTube Studio's stream-key list. To point a second,
+redundant encoder at the same broadcast, use **Show stream key** on the
+destination: it gives the key, the primary server (what CGBCStream
+pushes to) and YouTube's backup server, which is what that encoder
+should use. One encoder per server — two on the same one is what YouTube
+rejects the broadcast over. The key is fetched only when asked for; it is
+never part of the destinations list.
+
 Two per-destination YouTube settings, both **on** by default and toggled
 in the destinations table:
 - **Captions** — declares the broadcast's audio as English, which is what

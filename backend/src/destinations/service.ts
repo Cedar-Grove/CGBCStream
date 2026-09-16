@@ -67,7 +67,7 @@ export async function startDestination(
       const { broadcastId } = await reserveBroadcast(refreshToken, title, new Date(), {
         englishCaptions: meta.englishCaptions,
       });
-      const rtmpUrl = await bindToPersistentStream(refreshToken, id, meta, broadcastId, title);
+      const rtmpUrl = await bindToPersistentStream(refreshToken, id, meta, broadcastId);
 
       relayManager.start(id, rtmpUrl);
       openBroadcasts.set(id, broadcastId);
@@ -131,7 +131,7 @@ export async function startPreparedDestination(
     const refreshToken = getRefreshToken(meta.youtubeAccountId);
     if (!refreshToken) return { ok: false, error: "linked YouTube account no longer exists" };
     try {
-      rtmpUrl = await bindToPersistentStream(refreshToken, id, meta, prepared.broadcastId, meta.name);
+      rtmpUrl = await bindToPersistentStream(refreshToken, id, meta, prepared.broadcastId);
     } catch (err) {
       return { ok: false, error: (err as Error).message };
     }
@@ -167,9 +167,8 @@ async function bindToPersistentStream(
   id: string,
   meta: DestinationMeta,
   broadcastId: string,
-  title: string,
 ): Promise<string> {
-  const { streamId, rtmpUrl } = await ensureReusableStream(refreshToken, title, meta.youtubeStreamId);
+  const { streamId, rtmpUrl } = await ensureReusableStream(refreshToken, meta.youtubeStreamId);
   if (streamId !== meta.youtubeStreamId) setYoutubeStreamId(id, streamId);
   await bindBroadcastToStream(refreshToken, broadcastId, streamId);
   return rtmpUrl;

@@ -4,12 +4,14 @@ import { stopDestination } from "./service.js";
 import {
   createDestination,
   deleteDestination,
+  getDestinationMeta,
   getYoutubeAccountId,
   listDestinations,
   setEnabled,
   updateDestination,
 } from "./repository.js";
-import { deleteAccount } from "../youtube/accountsRepository.js";
+import { deleteAccount, getRefreshToken } from "../youtube/accountsRepository.js";
+import { getStreamIngestDetails } from "../youtube/youtubeService.js";
 import { PLATFORMS, type DestinationInput } from "./types.js";
 import { findBackupIngestReason } from "../relay/ingestUrl.js";
 
@@ -75,6 +77,40 @@ export function registerDestinationRoutes(app: FastifyInstance, relayManager: Re
     const updated = updateDestination(id, body);
     if (!updated) return reply.code(404).send({ error: "not found" });
     return updated;
+  });
+
+  /**
+   * The encoder-facing details of a YouTube destination's persistent stream:
+   * the key, the primary server (what this app pushes to), and the backup
+   * server, which exists for the operator's own redundant encoder.
+   *
+   * Deliberately its own endpoint rather than a field on the destination —
+   * the key is a secret equivalent to a password for the channel, so it is
+   * fetched when someone asks to see it, not handed out with every list.
+   */
+  app.get("/api/destinations/:id/stream-key", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const meta = getDestinationMeta(id);
+    if (!meta) return reply.code(404).send({ error: "not found" });
+    if (meta.platform !== "youtube") {
+      return reply
+        .code(400)
+        .send({ error: "only YouTube destinations have a persistent key — this one's key is the one you entered" });
+    }
+    if (!meta.youtubeAccountId) return reply.code(400).send({ error: "no YouTube account linked" });
+    if (!meta.youtubeStreamId) {
+      return reply.code(409).send({
+        error: "no persistent key yet — YouTube issues it on this destination's first service",
+      });
+    }
+    const refreshToken = getRefreshToken(meta.youtubeAccountId);
+    if (!refreshToken) return reply.code(400).send({ error: "linked YouTube account no longer exists" });
+
+    try {
+      return await getStreamIngestDetails(refreshToken, meta.youtubeStreamId);
+    } catch (err) {
+      return reply.code(502).send({ error: (err as Error).message });
+    }
   });
 
   app.delete("/api/destinations/:id", async (req, reply) => {
