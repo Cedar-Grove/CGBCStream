@@ -80,6 +80,18 @@ function ensureColumn(table: string, column: string, ddl: string): void {
 // server URL/key (YouTube issues a fresh RTMP key per broadcast).
 ensureColumn("destinations", "youtube_account_id", "youtube_account_id TEXT");
 
+// A YouTube destination's persistent ("reusable") stream resource. Keeping
+// one per destination is what makes its stream key static: the same key and
+// ingestion address are reused for every service, instead of a fresh one
+// being issued per broadcast.
+ensureColumn("destinations", "youtube_stream_id", "youtube_stream_id TEXT");
+
+// Per-destination broadcast settings, both on by default: declare the audio
+// as English (which is what makes YouTube generate English automatic
+// captions), and unlist the replay once the service ends.
+ensureColumn("destinations", "english_captions", "english_captions INTEGER NOT NULL DEFAULT 1");
+ensureColumn("destinations", "unlist_after", "unlist_after INTEGER NOT NULL DEFAULT 1");
+
 // Identifies which YouTube channel an account is for, so reconnecting the same
 // channel updates it in place instead of piling up duplicate accounts. Older
 // rows predate this and stay null; the index skips them.

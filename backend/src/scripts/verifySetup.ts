@@ -117,7 +117,16 @@ async function main(): Promise<void> {
       if (!destination.youtubeAccountId || !destination.youtubeChannelTitle) {
         fail(`${destination.name}: no connected channel linked — it cannot stream`);
       } else {
-        ok(`${destination.name} → ${destination.youtubeChannelTitle} (${flag})`);
+        const key = destination.hasReusableStreamKey
+          ? "persistent stream key"
+          : "stream key issued on first use";
+        ok(`${destination.name} → ${destination.youtubeChannelTitle} (${flag}, ${key})`);
+        if (!destination.englishCaptions) {
+          warn(`${destination.name}: English captions are off — YouTube will not auto-caption the service`);
+        }
+        if (!destination.unlistAfter) {
+          warn(`${destination.name}: unlist after is off — replays stay listed on the channel`);
+        }
       }
     } else if (!destination.hasStreamKey) {
       fail(`${destination.name}: no stream key set`);

@@ -8,6 +8,9 @@ export interface Destination {
   hasStreamKey: boolean;
   streamKeyPreview: string;
   youtubeAccountId: string | null;
+  hasReusableStreamKey: boolean;
+  englishCaptions: boolean;
+  unlistAfter: boolean;
   youtubeChannelTitle: string | null;
   youtubeLinkedAt: string | null;
   enabled: boolean;
@@ -19,6 +22,8 @@ export interface DestinationDraft {
   platform: Platform;
   serverUrl: string;
   streamKey?: string;
+  englishCaptions?: boolean;
+  unlistAfter?: boolean;
 }
 
 export type RelayStatus = "stopped" | "waiting" | "starting" | "running" | "error";

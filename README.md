@@ -60,7 +60,16 @@ Then go to **Destinations**:
 - **Subsplash / Facebook**: "+ Add destination" → name, server URL,
   stream key.
 - **YouTube**: "Connect YouTube channel" (see setup below) — no manual
-  RTMP details needed, a fresh key is created per broadcast.
+  RTMP details needed. The channel gets one *reusable* stream resource,
+  created on the first service and reused after that, so the stream key
+  and RTMP address are static from then on.
+
+Two per-destination YouTube settings, both **on** by default and toggled
+in the destinations table:
+- **Captions** — declares the broadcast's audio as English, which is what
+  makes YouTube generate English automatic captions.
+- **Unlist after** — drops the replay out of the channel's listings once
+  the service ends. It stays watchable by link.
 
 Always use a platform's **primary** ingest. Backup ingest URLs (YouTube's
 `b.rtmp.youtube.com` / `?backup=1`) belong to a second, redundant encoder;
@@ -87,7 +96,12 @@ the scheduled time. Reservations are stored (encrypted, since the RTMP
 url embeds the stream key) and keyed by schedule + destination +
 occurrence, so two services on the same day each go to their own
 broadcast, and a restart in between doesn't strand one or create a
-duplicate. If reserving fails — expired YouTube auth, an API blip — it
+duplicate. A reserved broadcast is deliberately left *unbound* until its
+start time: binding claims the channel's one persistent stream key, and
+two broadcasts reserved on the same morning would otherwise fight over
+it. For the same reason, a destination already streaming for one
+occurrence refuses a second, overlapping one rather than colliding with
+itself — the scheduler logs it and leaves the live service alone. If reserving fails — expired YouTube auth, an API blip — it
 retries every 5 minutes through the day, and failing that the broadcast
 is created at start time as before.
 

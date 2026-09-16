@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { db } from "../db.js";
 import { decryptSecret, encryptSecret } from "../crypto.js";
-import type { DestinationInput, DestinationPublic, Platform } from "./types.js";
+import type { DestinationInput, DestinationMeta, DestinationPublic, Platform } from "./types.js";
 
 interface Row {
   id: string;
@@ -10,6 +10,9 @@ interface Row {
   server_url: string;
   stream_key: string;
   youtube_account_id: string | null;
+  youtube_stream_id: string | null;
+  english_captions: number;
+  unlist_after: number;
   enabled: number;
   created_at: string;
   // Joined from youtube_accounts when listing, so the UI can tell two
@@ -28,6 +31,9 @@ function toPublic(row: Row): DestinationPublic {
     hasStreamKey: key.length > 0,
     streamKeyPreview: key ? `••••${key.slice(-4)}` : "",
     youtubeAccountId: row.youtube_account_id,
+    hasReusableStreamKey: !!row.youtube_stream_id,
+    englishCaptions: !!row.english_captions,
+    unlistAfter: !!row.unlist_after,
     youtubeChannelTitle: row.account_channel_title ?? null,
     youtubeLinkedAt: row.account_created_at ?? null,
     enabled: !!row.enabled,
@@ -73,17 +79,23 @@ function getRow(id: string): Row | undefined {
 }
 
 /** Just enough to decide how to start a destination, without exposing secrets. */
-export function getDestinationMeta(
-  id: string,
-): { platform: Platform; youtubeAccountId: string | null; name: string; enabled: boolean } | undefined {
+export function getDestinationMeta(id: string): DestinationMeta | undefined {
   const row = getRow(id);
   if (!row) return undefined;
   return {
     platform: row.platform,
     youtubeAccountId: row.youtube_account_id,
+    youtubeStreamId: row.youtube_stream_id,
+    englishCaptions: !!row.english_captions,
+    unlistAfter: !!row.unlist_after,
     name: row.name,
     enabled: !!row.enabled,
   };
+}
+
+/** Records the persistent stream YouTube issued, so the next service reuses the same key instead of asking for a new one. */
+export function setYoutubeStreamId(id: string, streamId: string): void {
+  db.prepare("UPDATE destinations SET youtube_stream_id = ? WHERE id = ?").run(streamId, id);
 }
 
 /** The full `rtmp://server/streamKey` ffmpeg push target for a static-platform destination, decrypted for use — never exposed via the API. */
@@ -94,6 +106,11 @@ export function getFullRtmpUrl(id: string): string | undefined {
   return `${row.server_url.trim().replace(/\/+$/, "")}/${key}`;
 }
 
+function boolColumn(input: boolean | undefined, existing: number): number {
+  if (input === undefined) return existing;
+  return input ? 1 : 0;
+}
+
 export function createDestination(input: DestinationInput): DestinationPublic {
   const row: Row = {
     id: randomUUID(),
@@ -102,12 +119,17 @@ export function createDestination(input: DestinationInput): DestinationPublic {
     server_url: input.serverUrl ?? "",
     stream_key: encryptSecret(input.streamKey ?? ""),
     youtube_account_id: input.youtubeAccountId ?? null,
+    youtube_stream_id: null,
+    english_captions: input.englishCaptions === false ? 0 : 1,
+    unlist_after: input.unlistAfter === false ? 0 : 1,
     enabled: 0,
     created_at: new Date().toISOString(),
   };
   db.prepare(
-    `INSERT INTO destinations (id, name, platform, server_url, stream_key, youtube_account_id, enabled, created_at)
-     VALUES (@id, @name, @platform, @server_url, @stream_key, @youtube_account_id, @enabled, @created_at)`,
+    `INSERT INTO destinations (id, name, platform, server_url, stream_key, youtube_account_id,
+                               english_captions, unlist_after, enabled, created_at)
+     VALUES (@id, @name, @platform, @server_url, @stream_key, @youtube_account_id,
+             @english_captions, @unlist_after, @enabled, @created_at)`,
   ).run(row);
   return toPublic(row);
 }
@@ -128,9 +150,13 @@ export function updateDestination(
     platform: input.platform ?? existing.platform,
     server_url: input.serverUrl?.trim() || existing.server_url,
     stream_key: input.streamKey ? encryptSecret(input.streamKey) : existing.stream_key,
+    english_captions: boolColumn(input.englishCaptions, existing.english_captions),
+    unlist_after: boolColumn(input.unlistAfter, existing.unlist_after),
   };
   db.prepare(
-    `UPDATE destinations SET name=@name, platform=@platform, server_url=@server_url, stream_key=@stream_key WHERE id=@id`,
+    `UPDATE destinations SET name=@name, platform=@platform, server_url=@server_url, stream_key=@stream_key,
+                             english_captions=@english_captions, unlist_after=@unlist_after
+     WHERE id=@id`,
   ).run(updated);
   return toPublic(updated);
 }

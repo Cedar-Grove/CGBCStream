@@ -63,25 +63,43 @@ function clientForRefreshToken(refreshToken: string): OAuth2Client {
   return client;
 }
 
+export interface BroadcastOptions {
+  privacyStatus?: "public" | "unlisted" | "private";
+  /**
+   * The destination's reusable stream resource, if it already has one. Null
+   * or an id YouTube no longer knows about means one is created and the new
+   * id comes back in the result for the caller to store.
+   */
+  reuseStreamId?: string | null;
+  /** Declare the broadcast's audio as English, which is what makes YouTube generate English automatic captions. */
+  englishCaptions?: boolean;
+}
+
 export interface BroadcastResult {
   broadcastId: string;
   rtmpUrl: string;
+  /** The reusable stream the broadcast is bound to — persist it so the next service reuses the same key. */
+  streamId: string;
+  /** Whether the English audio language was actually accepted (captions are best-effort, going live is not). */
+  englishCaptionsSet: boolean;
 }
 
 /**
- * Creates a broadcast + stream and binds them, with enableAutoStart/
- * enableAutoStop so YouTube itself transitions the broadcast live once
- * it sees RTMP data (and ends it once the feed stops) — no separate
- * transition() calls needed on our side.
+ * Creates the broadcast only — no stream, no binding.
+ *
+ * Kept separate because a reusable stream may be bound to just one broadcast
+ * at a time. Broadcasts are reserved hours ahead (at local midnight), so
+ * reserving two services on the same day would otherwise have the second
+ * bind steal the stream from the first. Binding happens at start time
+ * instead, when only one of them can actually be going live.
  */
-export async function createAndStartBroadcast(
+export async function reserveBroadcast(
   refreshToken: string,
   title: string,
   scheduledStartTime: Date,
-  privacyStatus: "public" | "unlisted" | "private" = "public",
-): Promise<BroadcastResult> {
-  const auth = clientForRefreshToken(refreshToken);
-  const yt = google.youtube({ version: "v3", auth });
+  options: BroadcastOptions = {},
+): Promise<{ broadcastId: string; englishCaptionsSet: boolean }> {
+  const yt = google.youtube({ version: "v3", auth: clientForRefreshToken(refreshToken) });
 
   const broadcast = await yt.liveBroadcasts.insert({
     part: ["snippet", "status", "contentDetails"],
@@ -90,49 +108,119 @@ export async function createAndStartBroadcast(
         title,
         scheduledStartTime: scheduledStartTime.toISOString(),
       },
-      status: { privacyStatus },
+      status: { privacyStatus: options.privacyStatus ?? "public" },
+      // enableAutoStart/enableAutoStop let YouTube transition the broadcast
+      // live once it sees RTMP data, and end it once the feed stops — no
+      // separate transition() calls needed on our side.
       contentDetails: { enableAutoStart: true, enableAutoStop: true },
     },
   });
 
-  const stream = await yt.liveStreams.insert({
-    part: ["snippet", "cdn"],
+  const broadcastId = broadcast.data.id;
+  if (!broadcastId) throw new Error("YouTube did not return a broadcast id");
+
+  let englishCaptionsSet = false;
+  if (options.englishCaptions !== false) {
+    // Declaring the audio language is what gets YouTube to generate English
+    // automatic captions. Best-effort: a channel that can't caption shouldn't
+    // stop the service going live.
+    try {
+      await setEnglishAudioLanguage(yt, broadcastId);
+      englishCaptionsSet = true;
+    } catch (err) {
+      console.error(`[youtube] could not set English audio language on ${broadcastId}:`, err);
+    }
+  }
+
+  return { broadcastId, englishCaptionsSet };
+}
+
+/**
+ * Returns the destination's persistent stream key, creating the stream
+ * resource the first time.
+ *
+ * `isReusable` is what makes the key survive the broadcast: the same
+ * ingestion address and stream name come back every week, so the encoder
+ * target never changes. A stored id that YouTube no longer recognises (the
+ * stream was deleted in Studio) transparently becomes a new one.
+ */
+export async function ensureReusableStream(
+  refreshToken: string,
+  title: string,
+  existingStreamId?: string | null,
+): Promise<{ streamId: string; rtmpUrl: string }> {
+  const yt = google.youtube({ version: "v3", auth: clientForRefreshToken(refreshToken) });
+
+  if (existingStreamId) {
+    const found = await yt.liveStreams.list({ part: ["cdn", "status"], id: [existingStreamId] });
+    const existing = found.data.items?.[0];
+    if (existing?.id) {
+      return { streamId: existing.id, rtmpUrl: rtmpUrlFor(existing.cdn?.ingestionInfo, existing.id) };
+    }
+    console.warn(
+      `[youtube] stored stream ${existingStreamId} no longer exists on the channel — creating a new one`,
+    );
+  }
+
+  const created = await yt.liveStreams.insert({
+    part: ["snippet", "cdn", "contentDetails"],
     requestBody: {
       snippet: { title },
       cdn: { frameRate: "variable", ingestionType: "rtmp", resolution: "variable" },
+      contentDetails: { isReusable: true },
     },
   });
+  const streamId = created.data.id;
+  if (!streamId) throw new Error("YouTube did not return a stream id");
+  return { streamId, rtmpUrl: rtmpUrlFor(created.data.cdn?.ingestionInfo, streamId) };
+}
 
-  const broadcastId = broadcast.data.id;
-  const streamId = stream.data.id;
-  if (!broadcastId || !streamId) {
-    throw new Error("YouTube did not return broadcast/stream ids");
-  }
-
+/** Points a reserved broadcast at the destination's persistent stream. Called at start time, not at reservation time. */
+export async function bindBroadcastToStream(
+  refreshToken: string,
+  broadcastId: string,
+  streamId: string,
+): Promise<void> {
+  const yt = google.youtube({ version: "v3", auth: clientForRefreshToken(refreshToken) });
   await yt.liveBroadcasts.bind({ id: broadcastId, part: ["id"], streamId });
+}
 
-  // Declaring the audio language is what gets YouTube to generate English
-  // automatic captions. Best-effort: a channel that can't caption shouldn't
-  // stop the service going live.
-  try {
-    await setEnglishAudioLanguage(yt, broadcastId);
-  } catch (err) {
-    console.error(`[youtube] could not set English audio language on ${broadcastId}:`, err);
-  }
+/** Reserve, resolve the persistent key, and bind — the whole thing, for going live right now. */
+export async function createAndStartBroadcast(
+  refreshToken: string,
+  title: string,
+  scheduledStartTime: Date,
+  options: BroadcastOptions = {},
+): Promise<BroadcastResult> {
+  const { broadcastId, englishCaptionsSet } = await reserveBroadcast(
+    refreshToken,
+    title,
+    scheduledStartTime,
+    options,
+  );
+  const { streamId, rtmpUrl } = await ensureReusableStream(refreshToken, title, options.reuseStreamId);
+  await bindBroadcastToStream(refreshToken, broadcastId, streamId);
+  return { broadcastId, rtmpUrl, streamId, englishCaptionsSet };
+}
 
-  const ingestionInfo = stream.data.cdn?.ingestionInfo;
+/**
+ * Builds the push URL from a stream's ingestion info.
+ *
+ * `ingestionAddress` is YouTube's PRIMARY ingest. The response also carries
+ * `backupIngestionAddress` for the same key — that one is reserved for a
+ * second, redundant encoder and is never read here, because two encoders on
+ * the backup slot is an error YouTube fails the whole broadcast over.
+ */
+function rtmpUrlFor(
+  ingestionInfo: { ingestionAddress?: string | null; streamName?: string | null } | undefined | null,
+  streamId: string,
+): string {
   if (!ingestionInfo?.ingestionAddress || !ingestionInfo?.streamName) {
-    throw new Error("YouTube did not return an RTMP ingestion address");
+    throw new Error(`YouTube did not return an RTMP ingestion address for stream ${streamId}`);
   }
-
-  // `ingestionAddress` is YouTube's PRIMARY ingest. The response also carries
-  // `backupIngestionAddress` for the same key — that one is reserved for a
-  // second, redundant encoder and is never read here, because two encoders on
-  // the backup slot is an error YouTube fails the whole broadcast over.
   const rtmpUrl = `${ingestionInfo.ingestionAddress.replace(/\/+$/, "")}/${ingestionInfo.streamName}`;
-  assertPrimaryIngest(rtmpUrl, `the ingestion address YouTube returned for broadcast ${broadcastId}`);
-
-  return { broadcastId, rtmpUrl };
+  assertPrimaryIngest(rtmpUrl, `the ingestion address YouTube returned for stream ${streamId}`);
+  return rtmpUrl;
 }
 
 /**

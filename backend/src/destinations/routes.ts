@@ -62,6 +62,11 @@ export function registerDestinationRoutes(app: FastifyInstance, relayManager: Re
     if (body.platform !== undefined && !isValidPlatform(body.platform)) {
       return reply.code(400).send({ error: `platform must be one of ${PLATFORMS.join(", ")}` });
     }
+    for (const flag of ["englishCaptions", "unlistAfter"] as const) {
+      if (body[flag] !== undefined && typeof body[flag] !== "boolean") {
+        return reply.code(400).send({ error: `${flag} must be true or false` });
+      }
+    }
     if (body.serverUrl !== undefined) {
       const urlError = serverUrlError(body.serverUrl);
       if (urlError) return reply.code(400).send({ error: urlError });

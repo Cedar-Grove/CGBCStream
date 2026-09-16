@@ -1,8 +1,8 @@
-import { startDestination, startDestinationWithUrl, stopDestination } from "../destinations/service.js";
-import { getDestinationMeta } from "../destinations/repository.js";
+import { startDestination, startPreparedDestination, stopDestination } from "../destinations/service.js";
+import { getDestinationMeta, setYoutubeStreamId } from "../destinations/repository.js";
 import type { RelayManager } from "../relay/relayManager.js";
 import { getRefreshToken } from "../youtube/accountsRepository.js";
-import { createAndStartBroadcast } from "../youtube/youtubeService.js";
+import { ensureReusableStream, reserveBroadcast } from "../youtube/youtubeService.js";
 import { nextOccurrenceWindow, startOfLocalDay } from "./occurrence.js";
 import { deletePreparedBefore, getPrepared, savePrepared } from "./preparedRepository.js";
 import { listActiveSchedules } from "./repository.js";
@@ -17,6 +17,11 @@ const PREPARE_RETRY_MS = 5 * 60_000;
 // Prepared rows are only meaningful for their own occurrence; keep a couple of
 // days so a post-mortem can still see what was reserved, then drop them.
 const PREPARED_RETENTION_MS = 2 * 24 * 60 * 60_000;
+
+/** Identifies one occurrence of one schedule — what owns a destination while it is streaming. */
+function runKey(scheduleId: string, windowStartIso: string): string {
+  return `${scheduleId}@${windowStartIso}`;
+}
 
 interface OccurrenceState {
   windowStartIso: string;
@@ -102,7 +107,12 @@ export class Scheduler {
       state.stopped = true;
       for (const destinationId of schedule.destinationIds) {
         const prepared = getPrepared(schedule.id, destinationId, windowStartIso);
-        await stopDestination(this.relayManager, destinationId, prepared?.broadcastId);
+        await stopDestination(
+          this.relayManager,
+          destinationId,
+          prepared?.broadcastId,
+          runKey(schedule.id, windowStartIso),
+        );
       }
     }
   }
@@ -124,10 +134,22 @@ export class Scheduler {
         continue;
       }
       try {
-        const prepared = await createAndStartBroadcast(refreshToken, schedule.title, scheduledStart);
-        savePrepared(schedule.id, destinationId, windowStartIso, prepared);
+        // Reserved unbound: binding claims the destination's one persistent
+        // stream key, so it waits until start time. Resolving the key here
+        // anyway means the push URL is known — and created once — well before
+        // the service.
+        const { broadcastId } = await reserveBroadcast(refreshToken, schedule.title, scheduledStart, {
+          englishCaptions: meta.englishCaptions,
+        });
+        const { streamId, rtmpUrl } = await ensureReusableStream(
+          refreshToken,
+          meta.name,
+          meta.youtubeStreamId,
+        );
+        if (streamId !== meta.youtubeStreamId) setYoutubeStreamId(destinationId, streamId);
+        savePrepared(schedule.id, destinationId, windowStartIso, { broadcastId, rtmpUrl });
         console.log(
-          `[scheduler] reserved YouTube broadcast ${prepared.broadcastId} for schedule ${schedule.id} at ${windowStartIso}`,
+          `[scheduler] reserved YouTube broadcast ${broadcastId} for schedule ${schedule.id} at ${windowStartIso}`,
         );
       } catch (err) {
         console.error(`[scheduler] failed to pre-create YouTube broadcast for ${destinationId}:`, err);
@@ -143,12 +165,12 @@ export class Scheduler {
 
       const prepared = getPrepared(schedule.id, destinationId, windowStartIso);
       if (prepared) {
-        const result = startDestinationWithUrl(
+        const result = await startPreparedDestination(
           this.relayManager,
           destinationId,
-          prepared.rtmpUrl,
+          prepared,
           schedule.id,
-          prepared.broadcastId,
+          runKey(schedule.id, windowStartIso),
         );
         if (!result.ok) {
           console.error(
@@ -157,7 +179,13 @@ export class Scheduler {
         }
         continue;
       }
-      const result = await startDestination(this.relayManager, destinationId, schedule.title, schedule.id);
+      const result = await startDestination(
+        this.relayManager,
+        destinationId,
+        schedule.title,
+        schedule.id,
+        runKey(schedule.id, windowStartIso),
+      );
       if (!result.ok) {
         console.error(`[scheduler] failed to start destination ${destinationId}: ${result.error}`);
       }

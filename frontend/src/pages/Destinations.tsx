@@ -115,6 +115,21 @@ export default function Destinations() {
     await refresh();
   }
 
+  // Broadcast settings, both on by default: English captions declares the
+  // audio as English so YouTube auto-captions the service, and unlist after
+  // drops the replay out of the channel's listings when it ends.
+  async function handleToggleSetting(
+    destination: Destination,
+    setting: "englishCaptions" | "unlistAfter",
+  ) {
+    try {
+      await api.updateDestination(destination.id, { [setting]: !destination[setting] });
+    } catch (err) {
+      setError((err as Error).message);
+    }
+    await refresh();
+  }
+
   return (
     <div>
       <div className="page-header">
@@ -129,7 +144,8 @@ export default function Destinations() {
 
       <p className="hint">
         “In schedule” marks a destination for use by scheduled streams. Streaming starts and stops on
-        the schedule — there is nothing to switch on here.
+        the schedule — there is nothing to switch on here. YouTube destinations keep one persistent
+        stream key, so the RTMP target never changes between services.
       </p>
 
       {justConnectedYoutube && <p className="success">YouTube channel connected.</p>}
@@ -142,6 +158,8 @@ export default function Destinations() {
             <th>Platform</th>
             <th>Stream key / channel</th>
             <th>In schedule</th>
+            <th>Captions</th>
+            <th>Unlist after</th>
             <th>Status</th>
             <th>Actions</th>
           </tr>
@@ -176,6 +194,34 @@ export default function Destinations() {
                 </label>
               </td>
               <td>
+                {d.platform === "youtube" ? (
+                  <label className="schedule-toggle">
+                    <input
+                      type="checkbox"
+                      checked={d.englishCaptions}
+                      onChange={() => handleToggleSetting(d, "englishCaptions")}
+                    />
+                    <span>{d.englishCaptions ? "English" : "Off"}</span>
+                  </label>
+                ) : (
+                  <span className="muted">—</span>
+                )}
+              </td>
+              <td>
+                {d.platform === "youtube" ? (
+                  <label className="schedule-toggle">
+                    <input
+                      type="checkbox"
+                      checked={d.unlistAfter}
+                      onChange={() => handleToggleSetting(d, "unlistAfter")}
+                    />
+                    <span>{d.unlistAfter ? "Yes" : "No"}</span>
+                  </label>
+                ) : (
+                  <span className="muted">—</span>
+                )}
+              </td>
+              <td>
                 <StatusBadge status={statuses[d.id]} />
               </td>
               <td className="actions">
@@ -186,7 +232,7 @@ export default function Destinations() {
           ))}
           {destinations.length === 0 && (
             <tr>
-              <td colSpan={6}>No destinations yet — connect YouTube or add Subsplash to get started.</td>
+              <td colSpan={8}>No destinations yet — connect YouTube or add Subsplash to get started.</td>
             </tr>
           )}
         </tbody>
