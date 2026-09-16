@@ -143,13 +143,18 @@ export class Scheduler {
 
       const prepared = getPrepared(schedule.id, destinationId, windowStartIso);
       if (prepared) {
-        startDestinationWithUrl(
+        const result = startDestinationWithUrl(
           this.relayManager,
           destinationId,
           prepared.rtmpUrl,
           schedule.id,
           prepared.broadcastId,
         );
+        if (!result.ok) {
+          console.error(
+            `[scheduler] failed to start destination ${destinationId} on its reserved broadcast: ${result.error}`,
+          );
+        }
         continue;
       }
       const result = await startDestination(this.relayManager, destinationId, schedule.title, schedule.id);

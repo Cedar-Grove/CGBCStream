@@ -224,6 +224,11 @@ export default function Destinations() {
               value={draft.serverUrl}
               onChange={(e) => setDraft({ ...draft, serverUrl: e.target.value })}
             />
+            <small>
+              Use the platform's primary ingest. A backup URL (a <code>b.</code> host or{" "}
+              <code>?backup=1</code>) is rejected — it belongs to the redundant encoder, and two
+              streams on it takes the service off the air.
+            </small>
           </label>
           <label>
             Stream key {editingId && <small>(leave blank to keep current)</small>}

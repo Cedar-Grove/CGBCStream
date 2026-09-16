@@ -62,6 +62,14 @@ Then go to **Destinations**:
 - **YouTube**: "Connect YouTube channel" (see setup below) — no manual
   RTMP details needed, a fresh key is created per broadcast.
 
+Always use a platform's **primary** ingest. Backup ingest URLs (YouTube's
+`b.rtmp.youtube.com` / `?backup=1`) belong to a second, redundant encoder;
+if this app pushed there as well, the platform would see two encoders on
+the backup slot and reject the broadcast. A backup URL is refused when you
+save a destination, and the relay refuses to start on one, so it can never
+happen by accident. For YouTube the address is taken straight from the
+API's primary `ingestionAddress` — `backupIngestionAddress` is never read.
+
 Tick **In schedule** on the destinations you want scheduled streams to
 use. That is configuration only — it never starts or stops anything. All
 streaming is driven by **Schedule** entries (weekly recurring or one-off,

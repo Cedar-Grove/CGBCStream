@@ -1,5 +1,6 @@
 import type { OAuth2Client } from "google-auth-library";
 import { google } from "googleapis";
+import { assertPrimaryIngest } from "../relay/ingestUrl.js";
 
 const SCOPES = ["https://www.googleapis.com/auth/youtube"];
 
@@ -124,10 +125,14 @@ export async function createAndStartBroadcast(
     throw new Error("YouTube did not return an RTMP ingestion address");
   }
 
-  return {
-    broadcastId,
-    rtmpUrl: `${ingestionInfo.ingestionAddress.replace(/\/+$/, "")}/${ingestionInfo.streamName}`,
-  };
+  // `ingestionAddress` is YouTube's PRIMARY ingest. The response also carries
+  // `backupIngestionAddress` for the same key — that one is reserved for a
+  // second, redundant encoder and is never read here, because two encoders on
+  // the backup slot is an error YouTube fails the whole broadcast over.
+  const rtmpUrl = `${ingestionInfo.ingestionAddress.replace(/\/+$/, "")}/${ingestionInfo.streamName}`;
+  assertPrimaryIngest(rtmpUrl, `the ingestion address YouTube returned for broadcast ${broadcastId}`);
+
+  return { broadcastId, rtmpUrl };
 }
 
 /**

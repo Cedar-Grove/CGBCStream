@@ -63,7 +63,13 @@ export async function startDestination(
 
   const rtmpUrl = getFullRtmpUrl(id);
   if (!rtmpUrl) return { ok: false, error: "not found" };
-  relayManager.start(id, rtmpUrl);
+  try {
+    // Throws if the stored server URL is a backup ingest — a destination saved
+    // before that was validated, or edited straight in the database.
+    relayManager.start(id, rtmpUrl);
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
   openSessions.set(
     id,
     startSession({ destinationId: id, destinationName: meta.name, platform: meta.platform, scheduleId }),
@@ -78,9 +84,13 @@ export function startDestinationWithUrl(
   rtmpUrl: string,
   scheduleId?: string | null,
   youtubeBroadcastId?: string | null,
-): void {
+): StartResult {
   const meta = getDestinationMeta(id);
-  relayManager.start(id, rtmpUrl);
+  try {
+    relayManager.start(id, rtmpUrl);
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
   if (youtubeBroadcastId) openBroadcasts.set(id, youtubeBroadcastId);
   if (meta) {
     openSessions.set(
@@ -94,6 +104,7 @@ export function startDestinationWithUrl(
       }),
     );
   }
+  return { ok: true, broadcastId: youtubeBroadcastId ?? undefined };
 }
 
 /**

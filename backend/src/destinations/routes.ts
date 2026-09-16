@@ -11,9 +11,26 @@ import {
 } from "./repository.js";
 import { deleteAccount } from "../youtube/accountsRepository.js";
 import { PLATFORMS, type DestinationInput } from "./types.js";
+import { findBackupIngestReason } from "../relay/ingestUrl.js";
 
 function isValidPlatform(value: unknown): value is DestinationInput["platform"] {
   return typeof value === "string" && (PLATFORMS as readonly string[]).includes(value);
+}
+
+/**
+ * Rejects a server URL that is a platform's backup ingest. Caught here so the
+ * person gets told at the point they paste it, rather than at 10:30 on Sunday
+ * when the relay refuses to start.
+ */
+function serverUrlError(serverUrl: string): string | undefined {
+  const trimmed = serverUrl.trim();
+  if (!trimmed) return "serverUrl must not be empty";
+  if (!/^rtmps?:\/\//i.test(trimmed)) return "serverUrl must start with rtmp:// or rtmps://";
+  const backup = findBackupIngestReason(trimmed);
+  if (backup) {
+    return `serverUrl is a backup ingest (${backup}). Use the primary ingest URL — streaming to backup from here collides with the redundant encoder and the platform rejects the stream.`;
+  }
+  return undefined;
 }
 
 export function registerDestinationRoutes(app: FastifyInstance, relayManager: RelayManager): void {
@@ -32,15 +49,23 @@ export function registerDestinationRoutes(app: FastifyInstance, relayManager: Re
     if (!body?.name || !body?.serverUrl || !body?.streamKey) {
       return reply.code(400).send({ error: "name, platform, serverUrl, streamKey are required" });
     }
-    const created = createDestination(body as DestinationInput);
+    const urlError = serverUrlError(body.serverUrl);
+    if (urlError) return reply.code(400).send({ error: urlError });
+
+    const created = createDestination({ ...(body as DestinationInput), serverUrl: body.serverUrl.trim() });
     return reply.code(201).send(created);
   });
 
   app.put("/api/destinations/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
-    const body = req.body as Partial<DestinationInput>;
+    let body = req.body as Partial<DestinationInput>;
     if (body.platform !== undefined && !isValidPlatform(body.platform)) {
       return reply.code(400).send({ error: `platform must be one of ${PLATFORMS.join(", ")}` });
+    }
+    if (body.serverUrl !== undefined) {
+      const urlError = serverUrlError(body.serverUrl);
+      if (urlError) return reply.code(400).send({ error: urlError });
+      body = { ...body, serverUrl: body.serverUrl.trim() };
     }
     const updated = updateDestination(id, body);
     if (!updated) return reply.code(404).send({ error: "not found" });

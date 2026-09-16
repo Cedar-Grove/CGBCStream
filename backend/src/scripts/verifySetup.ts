@@ -13,6 +13,7 @@ import { listDestinations } from "../destinations/repository.js";
 import { getRefreshToken } from "../youtube/accountsRepository.js";
 import { nextOccurrenceWindow, startOfLocalDay } from "../schedule/occurrence.js";
 import { listActiveSchedules } from "../schedule/repository.js";
+import { findBackupIngestReason } from "../relay/ingestUrl.js";
 
 interface AccountRow {
   id: string;
@@ -121,7 +122,14 @@ async function main(): Promise<void> {
     } else if (!destination.hasStreamKey) {
       fail(`${destination.name}: no stream key set`);
     } else {
-      ok(`${destination.name} (${destination.platform}, ${flag})`);
+      const backup = findBackupIngestReason(destination.serverUrl);
+      if (backup) {
+        fail(
+          `${destination.name}: its server URL is a backup ingest (${backup}) — swap it for the primary ingest URL, or the relay will refuse to start`,
+        );
+      } else {
+        ok(`${destination.name} (${destination.platform}, ${flag})`);
+      }
     }
   }
 

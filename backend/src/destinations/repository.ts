@@ -91,7 +91,7 @@ export function getFullRtmpUrl(id: string): string | undefined {
   const row = getRow(id);
   if (!row) return undefined;
   const key = decryptSecret(row.stream_key);
-  return `${row.server_url.replace(/\/+$/, "")}/${key}`;
+  return `${row.server_url.trim().replace(/\/+$/, "")}/${key}`;
 }
 
 export function createDestination(input: DestinationInput): DestinationPublic {
@@ -119,11 +119,14 @@ export function updateDestination(
   const existing = getRow(id);
   if (!existing) return undefined;
 
+  // A blank field means "leave this alone" — the edit form sends the stream
+  // key blank to keep the stored one, and the same must hold for the rest
+  // rather than silently clearing a destination's name or server.
   const updated: Row = {
     ...existing,
-    name: input.name ?? existing.name,
+    name: input.name?.trim() || existing.name,
     platform: input.platform ?? existing.platform,
-    server_url: input.serverUrl ?? existing.server_url,
+    server_url: input.serverUrl?.trim() || existing.server_url,
     stream_key: input.streamKey ? encryptSecret(input.streamKey) : existing.stream_key,
   };
   db.prepare(
