@@ -69,7 +69,10 @@ recognisable in YouTube Studio's stream-key list. To point a second,
 redundant encoder at the same broadcast, use **Show stream key** on the
 destination: it gives the key, the primary server (what CGBCStream
 pushes to) and YouTube's backup server, which is what that encoder
-should use. One encoder per server — two on the same one is what YouTube
+should use. Asking for it creates the stream if the destination has
+never streamed, so an encoder can be set up long before the first
+service — a stream resource is only an ingestion endpoint, and creating
+one puts nothing on the channel. One encoder per server — two on the same one is what YouTube
 rejects the broadcast over. The key is fetched only when asked for; it is
 never part of the destinations list.
 

@@ -119,7 +119,7 @@ async function main(): Promise<void> {
       } else {
         const key = destination.hasReusableStreamKey
           ? "persistent stream key"
-          : "stream key issued on first use";
+          : "no stream key yet — use Show stream key, or it is issued on the first service";
         ok(`${destination.name} → ${destination.youtubeChannelTitle} (${flag}, ${key})`);
         if (!destination.englishCaptions) {
           warn(`${destination.name}: English captions are off — YouTube will not auto-caption the service`);

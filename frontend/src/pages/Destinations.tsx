@@ -194,7 +194,7 @@ export default function Destinations() {
                     {d.youtubeLinkedAt && (
                       <small>linked {new Date(d.youtubeLinkedAt).toLocaleString()}</small>
                     )}
-                    {d.hasReusableStreamKey && (
+                    {d.youtubeAccountId && (
                       <button className="link-button" onClick={() => handleShowStreamKey(d)}>
                         {streamKey?.id === d.id ? "Hide stream key" : "Show stream key"}
                       </button>

@@ -6,12 +6,13 @@ import {
   deleteDestination,
   getDestinationMeta,
   getYoutubeAccountId,
+  setYoutubeStreamId,
   listDestinations,
   setEnabled,
   updateDestination,
 } from "./repository.js";
 import { deleteAccount, getRefreshToken } from "../youtube/accountsRepository.js";
-import { getStreamIngestDetails } from "../youtube/youtubeService.js";
+import { ensureReusableStream, getStreamIngestDetails } from "../youtube/youtubeService.js";
 import { PLATFORMS, type DestinationInput } from "./types.js";
 import { findBackupIngestReason } from "../relay/ingestUrl.js";
 
@@ -98,16 +99,17 @@ export function registerDestinationRoutes(app: FastifyInstance, relayManager: Re
         .send({ error: "only YouTube destinations have a persistent key — this one's key is the one you entered" });
     }
     if (!meta.youtubeAccountId) return reply.code(400).send({ error: "no YouTube account linked" });
-    if (!meta.youtubeStreamId) {
-      return reply.code(409).send({
-        error: "no persistent key yet — YouTube issues it on this destination's first service",
-      });
-    }
     const refreshToken = getRefreshToken(meta.youtubeAccountId);
     if (!refreshToken) return reply.code(400).send({ error: "linked YouTube account no longer exists" });
 
     try {
-      return await getStreamIngestDetails(refreshToken, meta.youtubeStreamId);
+      // Created here if this destination has never streamed, so an encoder can
+      // be set up ahead of the first service rather than waiting for the
+      // scheduler to reserve one. A stream resource is just an ingestion
+      // endpoint — creating it puts nothing on the channel.
+      const { streamId } = await ensureReusableStream(refreshToken, meta.youtubeStreamId);
+      if (streamId !== meta.youtubeStreamId) setYoutubeStreamId(id, streamId);
+      return await getStreamIngestDetails(refreshToken, streamId);
     } catch (err) {
       return reply.code(502).send({ error: (err as Error).message });
     }
