@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,15 +28,42 @@ const app = Fastify({ logger: true });
 
 app.register(fastifyCookie);
 
+// Read-only status/history endpoints also accept a shared service key
+// (header X-Service-Key, env MOBILE_SERVICE_KEY) so the internal mobile
+// app's backend (cedar-grove-api) can poll them server-to-server without
+// a full browser Google OAuth session. This is additive: it never
+// replaces the cookie check below, and it's only consulted for this
+// fixed set of read-only paths — mutation endpoints still require a
+// browser session.
+const SERVICE_KEY_PATHS = new Set(["/api/input/status", "/api/relay/status", "/api/history"]);
+
+function hasValidServiceKey(header: string | string[] | undefined): boolean {
+  const expected = process.env.MOBILE_SERVICE_KEY;
+  if (!expected) return false;
+  const provided = Array.isArray(header) ? header[0] : header;
+  if (!provided) return false;
+  const expectedBuf = Buffer.from(expected);
+  const providedBuf = Buffer.from(provided);
+  if (expectedBuf.length !== providedBuf.length) return false;
+  return timingSafeEqual(expectedBuf, providedBuf);
+}
+
 // Every /api/* and /hls/* route requires a valid session cookie except
-// login/logout/me (needed to render the login screen itself) and health
-// (used for container healthchecks, not sensitive). Static assets stay
+// login/logout/me (needed to render the login screen itself), health
+// (used for container healthchecks, not sensitive), and the read-only
+// paths above when a valid X-Service-Key is present. Static assets stay
 // public so the SPA shell can load and show the login form — data lives
 // behind the API, not the JS.
 app.addHook("onRequest", async (req, reply) => {
   const url = req.raw.url ?? "";
   if (!url.startsWith("/api/") && !url.startsWith("/hls/")) return;
   if (url.startsWith("/api/auth/") || url === "/api/health") return;
+
+  const pathOnly = url.split("?")[0];
+  if (SERVICE_KEY_PATHS.has(pathOnly) && hasValidServiceKey(req.headers["x-service-key"])) {
+    return;
+  }
+
   if (!isValidSession(req.cookies[COOKIE_NAME])) {
     return reply.code(401).send({ error: "authentication required" });
   }

@@ -50,6 +50,19 @@ rejected after Google's consent screen (checked server-side against
 the ID token's email and `hd` claim) — there's no way to bypass this
 from the client.
 
+#### Mobile app / service-to-service access
+
+The read-only status endpoints (`GET /api/input/status`,
+`GET /api/relay/status`, `GET /api/history`) also accept a shared
+secret instead of a browser session, so another backend can poll them
+server-to-server (e.g. the internal staff mobile app's API). Set
+`MOBILE_SERVICE_KEY` in `.env` to a long random value, then send it as
+the `X-Service-Key` header on requests to those three endpoints. Every
+other endpoint (destinations, schedules, YouTube, etc.) still requires
+the Google-login session cookie — this key does not work for them. If
+`MOBILE_SERVICE_KEY` is left unset, the header is never accepted and
+those endpoints keep requiring a session like everything else.
+
 - MediaMTX listens for the incoming RTMP push on port `1935`.
 - The web UI + API is on port `3000`.
 
