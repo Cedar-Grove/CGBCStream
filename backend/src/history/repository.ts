@@ -52,9 +52,13 @@ export function startSession(params: {
   return id;
 }
 
-export function endSession(id: string, status: Exclude<SessionStatus, "running"> = "completed"): void {
+export function endSession(
+  id: string,
+  status: Exclude<SessionStatus, "running"> = "completed",
+  endedAt: Date = new Date(),
+): void {
   db.prepare(`UPDATE stream_sessions SET ended_at = ?, status = ? WHERE id = ?`).run(
-    new Date().toISOString(),
+    endedAt.toISOString(),
     status,
     id,
   );
@@ -64,5 +68,10 @@ export function listRecentSessions(limit = 100): StreamSession[] {
   const rows = db
     .prepare(`SELECT * FROM stream_sessions ORDER BY started_at DESC LIMIT ?`)
     .all(limit) as Row[];
+  return rows.map(toPublic);
+}
+
+export function listRunningSessions(): StreamSession[] {
+  const rows = db.prepare(`SELECT * FROM stream_sessions WHERE status = 'running'`).all() as Row[];
   return rows.map(toPublic);
 }

@@ -309,6 +309,27 @@ async function setEnglishAudioLanguage(
   });
 }
 
+// Lifecycle states in which the broadcast is on air (or in preview) and so
+// needs an explicit transition to end.
+const ENDABLE_STATES = new Set(["live", "liveStarting", "testing", "testStarting"]);
+
+/**
+ * Ends a broadcast that is still on air.
+ *
+ * enableAutoStop is not relied on to do this: it only fires once YouTube
+ * sees the stream go inactive, and a persistent key can stay active after
+ * this app stops pushing — a redundant encoder on the backup ingest keeps it
+ * alive — so the broadcast would run on for days. A broadcast that has
+ * already ended, or never started, is left alone.
+ */
+export async function endBroadcast(refreshToken: string, broadcastId: string): Promise<void> {
+  const yt = google.youtube({ version: "v3", auth: clientForRefreshToken(refreshToken) });
+  const existing = await yt.liveBroadcasts.list({ part: ["status"], id: [broadcastId] });
+  const lifeCycleStatus = existing.data.items?.[0]?.status?.lifeCycleStatus;
+  if (!lifeCycleStatus || !ENDABLE_STATES.has(lifeCycleStatus)) return;
+  await yt.liveBroadcasts.transition({ id: broadcastId, broadcastStatus: "complete", part: ["status"] });
+}
+
 /**
  * Drops a finished broadcast out of the channel's public listings. It stays
  * watchable by link. Reads the current status first so updating privacy does
