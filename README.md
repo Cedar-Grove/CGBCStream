@@ -161,14 +161,22 @@ destination pushes to and when it was linked. Deleting a YouTube
 destination disconnects its channel, so no stored refresh token is left
 behind with nothing referencing it.
 
-Broadcasts are created with `enableAutoStart`/`enableAutoStop`, so
-YouTube itself flips the broadcast live once it sees the relay's RTMP
-data, and ends it once the feed stops — no manual "go live" step on
-YouTube's side. They are titled after the schedule entry, go out
+Broadcasts are created with `enableAutoStart`, so YouTube itself flips
+the broadcast live once it sees the relay's RTMP data — no manual "go
+live" step on YouTube's side. At the end of the scheduled window the
+relay stops and CGBCStream explicitly ends the broadcast rather than
+waiting on `enableAutoStop`, which never fires while anything (such as a
+redundant encoder on the backup ingest) is still feeding the persistent
+key. They are titled after the schedule entry, go out
 `public`, and are declared as English audio so YouTube generates English
 automatic captions. When the scheduled window ends the broadcast is set
 to **unlisted**, so it drops out of the channel's listings but stays
 watchable by anyone with the link.
+
+On startup, any history session the previous process left "running" is
+closed at the end of its scheduled window (so its duration is the
+service's, not however long the backend was down), and if that window is
+already over its broadcast is ended too.
 
 Note: a backend restart mid-service recovers on its own. The scheduler's
 next tick sees it is still inside the occurrence window and resumes

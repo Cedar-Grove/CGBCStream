@@ -104,7 +104,7 @@ if (existsSync(publicDir)) {
 
 
 const scheduler = new Scheduler(relayManager);
-scheduler.start();
+void scheduler.start();
 
 app.listen({ port: PORT, host: "0.0.0.0" }).catch((err) => {
   app.log.error(err);

@@ -1,11 +1,16 @@
-import { startDestination, startPreparedDestination, stopDestination } from "../destinations/service.js";
+import {
+  closeStaleSessions,
+  startDestination,
+  startPreparedDestination,
+  stopDestination,
+} from "../destinations/service.js";
 import { getDestinationMeta, setYoutubeStreamId } from "../destinations/repository.js";
 import type { RelayManager } from "../relay/relayManager.js";
 import { getRefreshToken } from "../youtube/accountsRepository.js";
 import { ensureReusableStream, reserveBroadcast } from "../youtube/youtubeService.js";
 import { nextOccurrenceWindow, startOfLocalDay } from "./occurrence.js";
 import { deletePreparedBefore, getPrepared, savePrepared } from "./preparedRepository.js";
-import { listActiveSchedules } from "./repository.js";
+import { listActiveSchedules, listSchedules } from "./repository.js";
 import type { SchedulePublic } from "./types.js";
 
 const TICK_MS = 30_000; // twice a minute so we don't miss the exact start/end minute
@@ -27,7 +32,14 @@ interface OccurrenceState {
   windowStartIso: string;
   lastPrepareAttempt: number | null;
   started: boolean;
-  stopped: boolean;
+}
+
+/** An occurrence that has been started and not yet stopped. */
+interface RunningOccurrence {
+  scheduleId: string;
+  windowStartIso: string;
+  end: Date;
+  destinationIds: string[];
 }
 
 /**
@@ -38,12 +50,17 @@ interface OccurrenceState {
  *    the push actually begins)
  *  - at start time, starts relaying to every destination on the schedule
  *    that is switched on
- *  - at end time, stops them, and unlists the YouTube broadcast (its own
- *    auto-stop completes it once it sees the feed stop)
+ *  - at end time, stops them, ends the YouTube broadcast, and unlists it
  *
  * This is the only thing that starts or stops a relay. A destination's
  * `enabled` flag is configuration -- whether scheduled runs use it -- and
  * toggling it in the UI has no immediate effect.
+ *
+ * Started occurrences are tracked separately from the schedule's
+ * current/next window, and stopped from that record. The window can't be
+ * used for it: nextOccurrenceWindow never returns a window that has already
+ * ended — at the end of a weekly service it rolls straight on to next week —
+ * so "is the window over?" is never true and the stop would never run.
  *
  * Prepared broadcasts are persisted rather than held in memory: the gap
  * between midnight and the service is long enough that a restart in between
@@ -53,10 +70,22 @@ interface OccurrenceState {
 export class Scheduler {
   private timer: NodeJS.Timeout | null = null;
   private occurrenceState = new Map<string, OccurrenceState>();
+  private running = new Map<string, RunningOccurrence>();
 
   constructor(private readonly relayManager: RelayManager) {}
 
-  start(): void {
+  async start(): Promise<void> {
+    // Anything the last process left "running" is stale; close it before
+    // the first tick can start this occurrence's sessions afresh.
+    try {
+      await closeStaleSessions((scheduleId, startedAt) => {
+        const schedule = listSchedules().find((s) => s.id === scheduleId);
+        const window = schedule && nextOccurrenceWindow(schedule, startedAt);
+        return window && window.start <= startedAt ? window.end : null;
+      });
+    } catch (err) {
+      console.error("[scheduler] failed to close stale sessions:", err);
+    }
     this.timer = setInterval(() => {
       this.tick().catch((err) => console.error("[scheduler] tick failed:", err));
     }, TICK_MS);
@@ -70,6 +99,13 @@ export class Scheduler {
   private async tick(): Promise<void> {
     const now = new Date();
     deletePreparedBefore(new Date(now.getTime() - PREPARED_RETENTION_MS).toISOString());
+    // Stops first, so a destination freed by one occurrence ending is free
+    // for another starting on the same tick.
+    for (const [key, occurrence] of this.running) {
+      if (now < occurrence.end) continue;
+      this.running.delete(key);
+      await this.stopOccurrence(occurrence);
+    }
     for (const schedule of listActiveSchedules()) {
       await this.processSchedule(schedule, now);
     }
@@ -82,7 +118,7 @@ export class Scheduler {
     const windowStartIso = window.start.toISOString();
     let state = this.occurrenceState.get(schedule.id);
     if (!state || state.windowStartIso !== windowStartIso) {
-      state = { windowStartIso, lastPrepareAttempt: null, started: false, stopped: false };
+      state = { windowStartIso, lastPrepareAttempt: null, started: false };
       this.occurrenceState.set(schedule.id, state);
     }
 
@@ -100,21 +136,27 @@ export class Scheduler {
 
     if (!state.started && now >= window.start && now < window.end) {
       state.started = true;
+      this.running.set(runKey(schedule.id, windowStartIso), {
+        scheduleId: schedule.id,
+        windowStartIso,
+        end: window.end,
+        destinationIds: [...schedule.destinationIds],
+      });
       await this.startDestinations(schedule, windowStartIso);
     }
+  }
 
-    if (!state.stopped && now >= window.end) {
-      state.stopped = true;
-      for (const destinationId of schedule.destinationIds) {
-        const prepared = getPrepared(schedule.id, destinationId, windowStartIso);
-        await stopDestination(
-          this.relayManager,
-          destinationId,
-          prepared?.broadcastId,
-          runKey(schedule.id, windowStartIso),
-        );
-      }
+  private async stopOccurrence(occurrence: RunningOccurrence): Promise<void> {
+    for (const destinationId of occurrence.destinationIds) {
+      const prepared = getPrepared(occurrence.scheduleId, destinationId, occurrence.windowStartIso);
+      await stopDestination(
+        this.relayManager,
+        destinationId,
+        prepared?.broadcastId,
+        runKey(occurrence.scheduleId, occurrence.windowStartIso),
+      );
     }
+    console.log(`[scheduler] stopped schedule ${occurrence.scheduleId} occurrence ${occurrence.windowStartIso}`);
   }
 
   private async prepareYoutubeBroadcasts(

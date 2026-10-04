@@ -1,8 +1,9 @@
-import { endSession, startSession } from "../history/repository.js";
+import { endSession, listRunningSessions, startSession } from "../history/repository.js";
 import type { RelayManager } from "../relay/relayManager.js";
 import { getRefreshToken } from "../youtube/accountsRepository.js";
 import {
   bindBroadcastToStream,
+  endBroadcast,
   ensureReusableStream,
   reserveBroadcast,
   unlistBroadcast,
@@ -216,16 +217,57 @@ export async function stopDestination(
 
   const broadcastId = openBroadcasts.get(id) ?? fallbackBroadcastId;
   openBroadcasts.delete(id);
-  if (!broadcastId) return;
+  if (broadcastId) await finishBroadcast(id, broadcastId);
+}
 
-  const meta = getDestinationMeta(id);
+/**
+ * Ends the YouTube broadcast and, when the destination's "unlist after"
+ * setting is on, drops the replay out of the channel's listings. Each step is
+ * best-effort: one failing must not stop the other, or the stop as a whole.
+ */
+async function finishBroadcast(destinationId: string, broadcastId: string): Promise<void> {
+  const meta = getDestinationMeta(destinationId);
   if (meta?.platform !== "youtube" || !meta.youtubeAccountId) return;
-  if (!meta.unlistAfter) return;
   const refreshToken = getRefreshToken(meta.youtubeAccountId);
   if (!refreshToken) return;
+  try {
+    await endBroadcast(refreshToken, broadcastId);
+  } catch (err) {
+    console.error(`[destinations] failed to end broadcast ${broadcastId}:`, err);
+  }
+  if (!meta.unlistAfter) return;
   try {
     await unlistBroadcast(refreshToken, broadcastId);
   } catch (err) {
     console.error(`[destinations] failed to unlist broadcast ${broadcastId}:`, err);
+  }
+}
+
+/**
+ * Closes history sessions left "running" by a previous process. Nothing can
+ * actually be relaying at startup, so every such row is stale — without this
+ * it stays open forever and its duration keeps counting up.
+ *
+ * `occurrenceEndFor` gives the end of the scheduled window a session started
+ * in, if it can still be worked out. The session is closed at that end (or
+ * now, if sooner), so its duration reflects the service rather than however
+ * long the backend was down. A session whose window has already ended also
+ * gets its broadcast ended; one still inside its window is left on air, as
+ * the scheduler resumes it on its first tick.
+ */
+export async function closeStaleSessions(
+  occurrenceEndFor: (scheduleId: string, startedAt: Date) => Date | null,
+): Promise<void> {
+  const now = new Date();
+  for (const session of listRunningSessions()) {
+    const startedAt = new Date(session.startedAt);
+    const occurrenceEnd = session.scheduleId ? occurrenceEndFor(session.scheduleId, startedAt) : null;
+    const windowOver = !occurrenceEnd || occurrenceEnd <= now;
+    const endedAt = occurrenceEnd && occurrenceEnd < now ? occurrenceEnd : now;
+    endSession(session.id, "completed", endedAt);
+    console.log(`[destinations] closed stale session ${session.id} for ${session.destinationName}`);
+    if (windowOver && session.destinationId && session.youtubeBroadcastId) {
+      await finishBroadcast(session.destinationId, session.youtubeBroadcastId);
+    }
   }
 }
