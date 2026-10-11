@@ -85,13 +85,14 @@ export interface BroadcastResult {
 }
 
 /**
- * Creates the broadcast only — no stream, no binding.
+ * Creates the broadcast only — no stream, no binding. Callers bind it to the
+ * destination's persistent stream with bindBroadcastToStream.
  *
- * Kept separate because a reusable stream may be bound to just one broadcast
- * at a time. Broadcasts are reserved hours ahead (at local midnight), so
- * reserving two services on the same day would otherwise have the second
- * bind steal the stream from the first. Binding happens at start time
- * instead, when only one of them can actually be going live.
+ * A reusable stream can be bound to any number of upcoming broadcasts (only
+ * one can be live on it at a time), so binding straight after reserving is
+ * safe even with two services on the same day — and it is what makes
+ * YouTube Studio show the broadcast on the "cgbc static key" instead of
+ * offering to create a new key.
  */
 export async function reserveBroadcast(
   refreshToken: string,
@@ -161,12 +162,18 @@ export async function ensureReusableStream(
         // Streams created before this was named — best-effort, since a
         // rename failing is no reason to keep a service off air.
         try {
+          // Only cdn's writable fields go back: echoing the whole cdn,
+          // ingestionInfo included, is rejected by the API.
           await yt.liveStreams.update({
             part: ["id", "snippet", "cdn"],
             requestBody: {
               id: existing.id,
               snippet: { title: REUSABLE_STREAM_TITLE },
-              cdn: existing.cdn ?? undefined,
+              cdn: {
+                frameRate: existing.cdn?.frameRate ?? "variable",
+                ingestionType: existing.cdn?.ingestionType ?? "rtmp",
+                resolution: existing.cdn?.resolution ?? "variable",
+              },
             },
           });
         } catch (err) {
@@ -230,14 +237,25 @@ export async function getStreamIngestDetails(
   };
 }
 
-/** Points a reserved broadcast at the destination's persistent stream. Called at start time, not at reservation time. */
+/**
+ * Points a broadcast at the destination's persistent stream. Called right
+ * after reserving, and again at start time — rebinding to the same stream is
+ * a no-op, and it covers a broadcast reserved before binding moved earlier.
+ */
 export async function bindBroadcastToStream(
   refreshToken: string,
   broadcastId: string,
   streamId: string,
 ): Promise<void> {
   const yt = google.youtube({ version: "v3", auth: clientForRefreshToken(refreshToken) });
-  await yt.liveBroadcasts.bind({ id: broadcastId, part: ["id"], streamId });
+  const bound = await yt.liveBroadcasts.bind({ id: broadcastId, part: ["id", "contentDetails"], streamId });
+  const boundStreamId = bound.data.contentDetails?.boundStreamId;
+  if (boundStreamId !== streamId) {
+    throw new Error(
+      `YouTube did not bind broadcast ${broadcastId} to stream ${streamId} (bound to ${boundStreamId ?? "nothing"})`,
+    );
+  }
+  console.log(`[youtube] broadcast ${broadcastId} bound to stream ${streamId} ("${REUSABLE_STREAM_TITLE}")`);
 }
 
 /** Reserve, resolve the persistent key, and bind — the whole thing, for going live right now. */

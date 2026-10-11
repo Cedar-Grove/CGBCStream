@@ -7,7 +7,7 @@ import {
 import { getDestinationMeta, setYoutubeStreamId } from "../destinations/repository.js";
 import type { RelayManager } from "../relay/relayManager.js";
 import { getRefreshToken } from "../youtube/accountsRepository.js";
-import { ensureReusableStream, reserveBroadcast } from "../youtube/youtubeService.js";
+import { bindBroadcastToStream, ensureReusableStream, reserveBroadcast } from "../youtube/youtubeService.js";
 import { nextOccurrenceWindow, startOfLocalDay } from "./occurrence.js";
 import { deletePreparedBefore, getPrepared, savePrepared } from "./preparedRepository.js";
 import { listActiveSchedules, listSchedules } from "./repository.js";
@@ -176,16 +176,21 @@ export class Scheduler {
         continue;
       }
       try {
-        // Reserved unbound: binding claims the destination's one persistent
-        // stream key, so it waits until start time. Resolving the key here
-        // anyway means the push URL is known — and created once — well before
-        // the service.
+        // Bound to the persistent stream straight away, so the broadcast sits
+        // on the "cgbc static key" in YouTube Studio all day — a reusable
+        // stream can carry several upcoming broadcasts. Start time binds
+        // again, which also catches a bind that failed here.
         const { broadcastId } = await reserveBroadcast(refreshToken, schedule.title, scheduledStart, {
           englishCaptions: meta.englishCaptions,
         });
         const { streamId, rtmpUrl } = await ensureReusableStream(refreshToken, meta.youtubeStreamId);
         if (streamId !== meta.youtubeStreamId) setYoutubeStreamId(destinationId, streamId);
         savePrepared(schedule.id, destinationId, windowStartIso, { broadcastId, rtmpUrl });
+        try {
+          await bindBroadcastToStream(refreshToken, broadcastId, streamId);
+        } catch (err) {
+          console.error(`[scheduler] could not bind ${broadcastId} yet — retrying at start time:`, err);
+        }
         console.log(
           `[scheduler] reserved YouTube broadcast ${broadcastId} for schedule ${schedule.id} at ${windowStartIso}`,
         );

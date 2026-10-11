@@ -109,9 +109,9 @@ export async function startDestination(
 /**
  * Starts a destination on a broadcast reserved earlier in the day.
  *
- * The reservation deliberately left the broadcast unbound — binding is what
- * claims the destination's one persistent stream key, so it happens here, at
- * start time, when only one occurrence can be going live.
+ * The reservation already bound it to the persistent stream; binding again
+ * here is a no-op in that case, and fixes a reservation whose bind failed or
+ * that was made before reservations were bound.
  */
 export async function startPreparedDestination(
   relayManager: RelayManager,
