@@ -2,6 +2,7 @@ import { endSession, listRunningSessions, startSession } from "../history/reposi
 import type { RelayManager } from "../relay/relayManager.js";
 import { getRefreshToken } from "../youtube/accountsRepository.js";
 import {
+  applyEnglishAudioLanguage,
   bindBroadcastToStream,
   endBroadcast,
   ensureReusableStream,
@@ -135,6 +136,16 @@ export async function startPreparedDestination(
       rtmpUrl = await bindToPersistentStream(refreshToken, id, meta, prepared.broadcastId);
     } catch (err) {
       return { ok: false, error: (err as Error).message };
+    }
+    if (meta.englishCaptions) {
+      // Set at reservation already; this retries one that failed there, and
+      // picks up the toggle being switched on since. Best-effort — captions
+      // are no reason to keep the service off air.
+      try {
+        await applyEnglishAudioLanguage(refreshToken, prepared.broadcastId);
+      } catch (err) {
+        console.error(`[destinations] could not set English audio on ${prepared.broadcastId}:`, err);
+      }
     }
   }
 

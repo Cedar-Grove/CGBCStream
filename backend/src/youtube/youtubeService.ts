@@ -1,5 +1,5 @@
 import type { OAuth2Client } from "google-auth-library";
-import { google } from "googleapis";
+import { google, type youtube_v3 } from "googleapis";
 import { assertPrimaryIngest } from "../relay/ingestUrl.js";
 
 const SCOPES = ["https://www.googleapis.com/auth/youtube"];
@@ -299,19 +299,43 @@ function rtmpUrlFor(
 }
 
 /**
+ * Declares an existing broadcast's audio as English — for retrying at start
+ * time, so a failed attempt at reservation (or a toggle switched on since)
+ * still takes effect before the service goes out.
+ */
+export async function applyEnglishAudioLanguage(refreshToken: string, broadcastId: string): Promise<void> {
+  const yt = google.youtube({ version: "v3", auth: clientForRefreshToken(refreshToken) });
+  await setEnglishAudioLanguage(yt, broadcastId);
+}
+
+const VIDEO_LOOKUP_DELAYS_MS = [0, 2_000, 4_000, 8_000, 16_000];
+
+/**
  * videos.update replaces the parts it is given, so the existing snippet is
  * read back first and only the language fields changed — otherwise the title
  * and category would be cleared.
+ *
+ * A just-inserted broadcast's video can take a few seconds to appear in
+ * videos.list, so the lookup retries rather than treating "not found yet" as
+ * done — that silent no-op is what left broadcasts without English set. The
+ * update's response is checked too, so success is only reported when
+ * YouTube actually holds the language.
  */
 async function setEnglishAudioLanguage(
   yt: ReturnType<typeof google.youtube>,
   videoId: string,
 ): Promise<void> {
-  const existing = await yt.videos.list({ part: ["snippet"], id: [videoId] });
-  const snippet = existing.data.items?.[0]?.snippet;
-  if (!snippet) return;
+  let snippet: youtube_v3.Schema$VideoSnippet | undefined;
+  for (const delay of VIDEO_LOOKUP_DELAYS_MS) {
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    const existing = await yt.videos.list({ part: ["snippet"], id: [videoId] });
+    snippet = existing.data.items?.[0]?.snippet;
+    if (snippet) break;
+  }
+  if (!snippet) throw new Error(`video ${videoId} not found on the channel — could not set its language`);
+  if (snippet.defaultAudioLanguage === "en" && snippet.defaultLanguage === "en") return;
 
-  await yt.videos.update({
+  const updated = await yt.videos.update({
     part: ["snippet"],
     requestBody: {
       id: videoId,
@@ -325,6 +349,11 @@ async function setEnglishAudioLanguage(
       },
     },
   });
+  const audioLanguage = updated.data.snippet?.defaultAudioLanguage;
+  if (audioLanguage !== "en") {
+    throw new Error(`YouTube did not keep English on ${videoId} (audio language is ${audioLanguage ?? "unset"})`);
+  }
+  console.log(`[youtube] ${videoId} set to English audio for automatic captions`);
 }
 
 // Lifecycle states in which the broadcast is on air (or in preview) and so
