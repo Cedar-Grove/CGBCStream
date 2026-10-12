@@ -121,10 +121,11 @@ the scheduled time. Reservations are stored (encrypted, since the RTMP
 url embeds the stream key) and keyed by schedule + destination +
 occurrence, so two services on the same day each go to their own
 broadcast, and a restart in between doesn't strand one or create a
-duplicate. A reserved broadcast is deliberately left *unbound* until its
-start time: binding claims the channel's one persistent stream key, and
-two broadcasts reserved on the same morning would otherwise fight over
-it. For the same reason, a destination already streaming for one
+duplicate. A reserved broadcast is bound to the persistent
+stream as soon as it is created, so in YouTube Studio it shows on the
+**“cgbc static key”** all day rather than on a new key; it is bound again
+at start time in case that first bind failed. A reusable stream can carry
+several upcoming broadcasts, but only one can be live on it, so a destination already streaming for one
 occurrence refuses a second, overlapping one rather than colliding with
 itself — the scheduler logs it and leaves the live service alone. If reserving fails — expired YouTube auth, an API blip — it
 retries every 5 minutes through the day, and failing that the broadcast

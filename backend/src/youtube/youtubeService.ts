@@ -1,5 +1,5 @@
 import type { OAuth2Client } from "google-auth-library";
-import { google } from "googleapis";
+import { google, type youtube_v3 } from "googleapis";
 import { assertPrimaryIngest } from "../relay/ingestUrl.js";
 
 const SCOPES = ["https://www.googleapis.com/auth/youtube"];
@@ -85,13 +85,14 @@ export interface BroadcastResult {
 }
 
 /**
- * Creates the broadcast only — no stream, no binding.
+ * Creates the broadcast only — no stream, no binding. Callers bind it to the
+ * destination's persistent stream with bindBroadcastToStream.
  *
- * Kept separate because a reusable stream may be bound to just one broadcast
- * at a time. Broadcasts are reserved hours ahead (at local midnight), so
- * reserving two services on the same day would otherwise have the second
- * bind steal the stream from the first. Binding happens at start time
- * instead, when only one of them can actually be going live.
+ * A reusable stream can be bound to any number of upcoming broadcasts (only
+ * one can be live on it at a time), so binding straight after reserving is
+ * safe even with two services on the same day — and it is what makes
+ * YouTube Studio show the broadcast on the "cgbc static key" instead of
+ * offering to create a new key.
  */
 export async function reserveBroadcast(
   refreshToken: string,
@@ -161,12 +162,18 @@ export async function ensureReusableStream(
         // Streams created before this was named — best-effort, since a
         // rename failing is no reason to keep a service off air.
         try {
+          // Only cdn's writable fields go back: echoing the whole cdn,
+          // ingestionInfo included, is rejected by the API.
           await yt.liveStreams.update({
             part: ["id", "snippet", "cdn"],
             requestBody: {
               id: existing.id,
               snippet: { title: REUSABLE_STREAM_TITLE },
-              cdn: existing.cdn ?? undefined,
+              cdn: {
+                frameRate: existing.cdn?.frameRate ?? "variable",
+                ingestionType: existing.cdn?.ingestionType ?? "rtmp",
+                resolution: existing.cdn?.resolution ?? "variable",
+              },
             },
           });
         } catch (err) {
@@ -230,14 +237,25 @@ export async function getStreamIngestDetails(
   };
 }
 
-/** Points a reserved broadcast at the destination's persistent stream. Called at start time, not at reservation time. */
+/**
+ * Points a broadcast at the destination's persistent stream. Called right
+ * after reserving, and again at start time — rebinding to the same stream is
+ * a no-op, and it covers a broadcast reserved before binding moved earlier.
+ */
 export async function bindBroadcastToStream(
   refreshToken: string,
   broadcastId: string,
   streamId: string,
 ): Promise<void> {
   const yt = google.youtube({ version: "v3", auth: clientForRefreshToken(refreshToken) });
-  await yt.liveBroadcasts.bind({ id: broadcastId, part: ["id"], streamId });
+  const bound = await yt.liveBroadcasts.bind({ id: broadcastId, part: ["id", "contentDetails"], streamId });
+  const boundStreamId = bound.data.contentDetails?.boundStreamId;
+  if (boundStreamId !== streamId) {
+    throw new Error(
+      `YouTube did not bind broadcast ${broadcastId} to stream ${streamId} (bound to ${boundStreamId ?? "nothing"})`,
+    );
+  }
+  console.log(`[youtube] broadcast ${broadcastId} bound to stream ${streamId} ("${REUSABLE_STREAM_TITLE}")`);
 }
 
 /** Reserve, resolve the persistent key, and bind — the whole thing, for going live right now. */
@@ -281,19 +299,43 @@ function rtmpUrlFor(
 }
 
 /**
+ * Declares an existing broadcast's audio as English — for retrying at start
+ * time, so a failed attempt at reservation (or a toggle switched on since)
+ * still takes effect before the service goes out.
+ */
+export async function applyEnglishAudioLanguage(refreshToken: string, broadcastId: string): Promise<void> {
+  const yt = google.youtube({ version: "v3", auth: clientForRefreshToken(refreshToken) });
+  await setEnglishAudioLanguage(yt, broadcastId);
+}
+
+const VIDEO_LOOKUP_DELAYS_MS = [0, 2_000, 4_000, 8_000, 16_000];
+
+/**
  * videos.update replaces the parts it is given, so the existing snippet is
  * read back first and only the language fields changed — otherwise the title
  * and category would be cleared.
+ *
+ * A just-inserted broadcast's video can take a few seconds to appear in
+ * videos.list, so the lookup retries rather than treating "not found yet" as
+ * done — that silent no-op is what left broadcasts without English set. The
+ * update's response is checked too, so success is only reported when
+ * YouTube actually holds the language.
  */
 async function setEnglishAudioLanguage(
   yt: ReturnType<typeof google.youtube>,
   videoId: string,
 ): Promise<void> {
-  const existing = await yt.videos.list({ part: ["snippet"], id: [videoId] });
-  const snippet = existing.data.items?.[0]?.snippet;
-  if (!snippet) return;
+  let snippet: youtube_v3.Schema$VideoSnippet | undefined;
+  for (const delay of VIDEO_LOOKUP_DELAYS_MS) {
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    const existing = await yt.videos.list({ part: ["snippet"], id: [videoId] });
+    snippet = existing.data.items?.[0]?.snippet;
+    if (snippet) break;
+  }
+  if (!snippet) throw new Error(`video ${videoId} not found on the channel — could not set its language`);
+  if (snippet.defaultAudioLanguage === "en" && snippet.defaultLanguage === "en") return;
 
-  await yt.videos.update({
+  const updated = await yt.videos.update({
     part: ["snippet"],
     requestBody: {
       id: videoId,
@@ -307,6 +349,11 @@ async function setEnglishAudioLanguage(
       },
     },
   });
+  const audioLanguage = updated.data.snippet?.defaultAudioLanguage;
+  if (audioLanguage !== "en") {
+    throw new Error(`YouTube did not keep English on ${videoId} (audio language is ${audioLanguage ?? "unset"})`);
+  }
+  console.log(`[youtube] ${videoId} set to English audio for automatic captions`);
 }
 
 // Lifecycle states in which the broadcast is on air (or in preview) and so
